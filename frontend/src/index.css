@@ -731,3 +731,13 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
   background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
 }
 .bo-kind.carrier { border-color: var(--accent); color: var(--text); }
+
+/* Nota sul costo e sulla cache dell'agente: sta in chiaro sotto i risultati perche' prima viveva
+   in un tooltip, dove nessuno poteva scoprire che ogni analisi e' una chiamata a pagamento. */
+.cache-note {
+  margin: 6px 0 12px; padding: 9px 12px; font-size: 12.5px; line-height: 1.55;
+  color: var(--muted); background: var(--panel2);
+  border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+}
+.cache-note strong { color: var(--text); }
+.cachechip.fresh { color: var(--ok); }

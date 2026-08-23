@@ -105,7 +105,14 @@ function ago(iso: string): string {
   return h < 24 ? `generato ${h} ${h === 1 ? "ora" : "ore"} fa` : `generato ${Math.round(h / 24)} gg fa`;
 }
 
-/** Says which engine produced an answer: the agent, or the built-in fallback vocabulary. */
+/**
+ * Dice quale motore ha risposto e, quando e' l'agente, cosa costa.
+ *
+ * L'agente interroga OpenAI per davvero, quindi ogni analisi ha un prezzo. La cache lo tiene basso
+ * -- una chiamata ogni dodici ore per la stessa domanda -- ma finche' quella regola restava in un
+ * tooltip nessuno poteva saperlo, e la differenza fra una risposta appena pagata e una riusata
+ * dalla cache non si vedeva affatto.
+ */
 function EngineBadge({ engine, label }: { engine: string; label?: string }) {
   const agentic = engine === "agentic";
   return (
@@ -113,6 +120,16 @@ function EngineBadge({ engine, label }: { engine: string; label?: string }) {
       {agentic ? "✨ agente AI" : "⚙ regole predefinite"}
     </span>
   );
+}
+
+/** Quando scade la finestra di cache, per dire quando ci sara' la prossima chiamata a pagamento. */
+function nextRefresh(iso: string, hours: number): string {
+  const when = new Date(new Date(iso).getTime() + hours * 3600_000);
+  const mins = Math.round((when.getTime() - Date.now()) / 60000);
+  if (mins <= 0) return "alla prossima apertura";
+  if (mins < 60) return `fra ${mins} min`;
+  const h = Math.round(mins / 60);
+  return `fra ${h} ${h === 1 ? "ora" : "ore"}`;
 }
 
 /** A theme card: measured demand, timing and the prompts to start from. */
@@ -314,10 +331,14 @@ export default function TrendsView() {
             </label>
           )}
           <button className="btn" onClick={() => load()} disabled={loading}>{loading ? "…" : "Aggiorna"}</button>
-          {sub === "themes" && themes?.engine === "agentic" && (
-            <button className="btn ghost" onClick={() => load("themes", true)} disabled={loading}
-                    title="Chiede all'agente un'analisi nuova invece di riusare quella in cache">
-              ↻ Rigenera
+          {sub === "themes" && (
+            <button
+              className="btn ghost"
+              onClick={() => load("themes", true)}
+              disabled={loading}
+              title="Ignora la cache e chiede all'agente un'analisi nuova: e' una chiamata a OpenAI a pagamento"
+            >
+              ↻ Rigenera ora
             </button>
           )}
         </div>
@@ -366,13 +387,36 @@ export default function TrendsView() {
         <>
           <div className="muted small src">
             {themes?.engine && <EngineBadge engine={themes.engine} label={themes.engineLabel} />}
-            {themes?.fromCache && themes.generatedAt && (
-              <span className="cachechip" title={`Le risposte dell'agente restano in cache ${themes.cacheHours ?? 12} ore. Usa Rigenera per una nuova analisi.`}>
-                ⏱ {ago(themes.generatedAt)}
+            {themes?.generatedAt && (
+              <span className={`cachechip ${themes.fromCache ? "" : "fresh"}`}>
+                ⏱ {themes.fromCache ? ago(themes.generatedAt) : "appena generato"}
               </span>
             )}
             {" "}{themes?.source ?? "…"}
           </div>
+
+          {/* Quanto costa questa scheda e come funziona, detto in chiaro invece che in un tooltip. */}
+          {themes?.engine === "agentic" && (
+            <div className="cache-note">
+              Questa analisi la produce un <strong>agente che interroga OpenAI</strong>, quindi ha un costo.
+              Per non pagarla ogni volta, la risposta viene <strong>riusata per {themes.cacheHours ?? 12} ore</strong>:
+              una sola chiamata per ogni combinazione di stile, categoria e area.
+              {themes.generatedAt && (
+                <> Quella che stai guardando {themes.fromCache ? "viene dalla cache" : "è stata appena prodotta"}; la
+                prossima verrà richiesta <strong>{nextRefresh(themes.generatedAt, themes.cacheHours ?? 12)}</strong>.</>
+              )}
+              {" "}Con <em>Rigenera ora</em> ne chiedi una nuova, che viene preparata in background.
+            </div>
+          )}
+          {themes?.engine === "rules" && (
+            <div className="cache-note">
+              Questi risultati vengono dal <strong>catalogo predefinito</strong>: non costano nulla e non cambiano da
+              soli.{" "}
+              {themes.warning
+                ? "L'analisi dell'agente richiede qualche minuto e viene preparata in background: riapri la scheda fra poco."
+                : <>L'agente AI non è configurato — vedi <em>Configurazione ▸ AI e metadati</em>.</>}
+            </div>
+          )}
           {themes?.warning && <div className="engine-warn">⚠ {themes.warning}</div>}
           {themes && (
             <div className="muted small src">
