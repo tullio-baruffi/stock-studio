@@ -94,7 +94,7 @@ namespace MJ.Classifier
                 var raster = string.Equals(message.Mode, "raster", StringComparison.OrdinalIgnoreCase);
                 var produced = raster
                     ? PrepareRaster(originalPath, work, baseName, log)
-                    : Vectorize(originalPath, work, baseName, context.FunctionAppDirectory, log);
+                    : Vectorize(originalPath, work, baseName, context.FunctionAppDirectory, message.Threshold, log);
 
                 // SharePoint vuole qui un percorso relativo al web ("ImagesToClassify/nome"), non
                 // uno server-relative: passandogli "/sites/Classifier/..." tenta di creare la
@@ -163,8 +163,15 @@ namespace MJ.Classifier
             return new[] { jpgPath };
         }
 
-        /// <summary>Soglia di luminanza (Otsu) -> potrace -> SVG + EPS, piu' il JPEG di consegna.</summary>
-        private static string[] Vectorize(string originalPath, string dir, string baseName, string functionDir, ILogger log)
+        /// <summary>
+        /// Soglia di luminanza -> potrace -> SVG + EPS, piu' il JPEG di consegna.
+        ///
+        /// La soglia arriva da chi ha caricato l'immagine quando l'ha regolata guardando
+        /// l'anteprima; altrimenti la calcola Otsu. Il valore scelto a mano vince perche' e' stato
+        /// deciso vedendo il risultato, cosa che l'istogramma da solo non puo' sapere.
+        /// </summary>
+        private static string[] Vectorize(string originalPath, string dir, string baseName, string functionDir,
+                                          int? requestedThreshold, ILogger log)
         {
             var bmpPath = Path.Combine(dir, baseName + ".trace.bmp");
             var svgPath = Path.Combine(dir, baseName + ".svg");
@@ -173,7 +180,10 @@ namespace MJ.Classifier
 
             using (var src = Image.Load<Rgb24>(originalPath))
             {
-                var threshold = ComputeOtsu(src);
+                var manual = requestedThreshold.HasValue
+                          && requestedThreshold.Value >= 0
+                          && requestedThreshold.Value <= 255;
+                var threshold = manual ? requestedThreshold.Value : ComputeOtsu(src);
                 using var bw = src.Clone();
                 bw.Mutate(x => x.BinaryThreshold(threshold / 255f));
 
@@ -186,7 +196,7 @@ namespace MJ.Classifier
                 using var jpg = bw.Clone();
                 Downscale(jpg, JpegLongEdge);
                 jpg.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
-                log.LogInformation($"Soglia Otsu {threshold}, bitmap pronta per il tracciato");
+                log.LogInformation($"Soglia {threshold} ({(manual ? "scelta a mano" : "Otsu")}), bitmap pronta per il tracciato");
             }
 
             RunPotrace(bmpPath, svgPath, "svg", functionDir, log);
@@ -239,6 +249,14 @@ namespace MJ.Classifier
             log.LogInformation($"potrace {backend}: {new FileInfo(outPath).Length / 1024} KB");
         }
 
+        /// <summary>
+        /// Soglia di Otsu sulla stessa luminanza che verra' poi usata per binarizzare.
+        ///
+        /// Il dettaglio non e' pedanteria: BinaryThreshold di ImageSharp misura la luminanza in
+        /// BT.709, e calcolare la soglia in BT.601 significherebbe deciderla su una scala e
+        /// applicarla su un'altra. Su un soggetto molto saturo le due scale divergono di decine di
+        /// livelli, abbastanza da mangiarsi o gonfiare la silhouette.
+        /// </summary>
         private static int ComputeOtsu(Image<Rgb24> img)
         {
             var hist = new int[256];
@@ -250,7 +268,7 @@ namespace MJ.Classifier
                     for (var x = 0; x < row.Length; x++)
                     {
                         ref var p = ref row[x];
-                        hist[(int)(0.299 * p.R + 0.587 * p.G + 0.114 * p.B)]++;
+                        hist[(int)(0.2126 * p.R + 0.7152 * p.G + 0.0722 * p.B + 0.5)]++;
                     }
                 }
             });

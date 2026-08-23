@@ -58,10 +58,15 @@ public class JobsController : ControllerBase
     /// in-memory queue, so the batch stops whenever the site restarts; here it runs in a Function
     /// driven by a storage queue, so the batch survives a restart, a plan change or the site being
     /// switched off entirely. Tracing, classification and delivery all continue without this API.
+    ///
+    /// <paramref name="thresholds"/> carries the tracing cut the author picked for each picture
+    /// while watching the preview in the browser, aligned by position with <paramref name="files"/>;
+    /// an empty entry, or none at all, leaves that picture to Otsu.
     /// </summary>
     [HttpPost("handoff")]
     [RequestSizeLimit(500_000_000)]
-    public async Task<IActionResult> Handoff([FromForm] List<IFormFile> files, [FromForm] string? mode, CancellationToken ct)
+    public async Task<IActionResult> Handoff([FromForm] List<IFormFile> files, [FromForm] string? mode,
+                                             [FromForm] List<string>? thresholds, CancellationToken ct)
     {
         if (files == null || files.Count == 0) return BadRequest("Nessun file caricato.");
         if (!_handoff.Enabled)
@@ -70,13 +75,21 @@ public class JobsController : ControllerBase
         var accepted = new List<object>();
         var rejected = new List<object>();
 
-        foreach (var f in files)
+        for (var i = 0; i < files.Count; i++)
         {
+            var f = files[i];
             try
             {
+                // Positional, not by name: two authors can upload files called the same thing, and
+                // pairing by name would give one of them the other's threshold.
+                int? threshold = null;
+                if (thresholds != null && i < thresholds.Count
+                    && int.TryParse(thresholds[i], out var t) && t is >= 0 and <= 255)
+                    threshold = t;
+
                 await using var stream = f.OpenReadStream();
-                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", ct);
-                accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName });
+                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold, ct);
+                accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold });
             }
             catch (Exception ex)
             {

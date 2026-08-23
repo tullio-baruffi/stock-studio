@@ -20,6 +20,17 @@ namespace StockStudio.Shared.Contracts
         /// <summary>"vector" traces the silhouette; "raster" ships the picture as it is.</summary>
         public string? Mode { get; set; }
 
+        /// <summary>
+        /// Luminance cut, 0-255, chosen by the author while looking at the preview in the browser.
+        /// Null leaves the decision to Otsu.
+        ///
+        /// Otsu reads the histogram and splits it where the two halves are furthest apart, which is
+        /// right for a picture with a clear subject and wrong for a pale drawing on a pale ground —
+        /// exactly the case where the author can see what the machine cannot. Carrying the number
+        /// here keeps that judgement without bringing the tracing back into the web application.
+        /// </summary>
+        public int? Threshold { get; set; }
+
         public override string ToString() => JsonConvert.SerializeObject(this);
     }
 }

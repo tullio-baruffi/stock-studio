@@ -33,10 +33,14 @@ public class PipelineController : ControllerBase
     {
         // The -poison queues are where the Functions runtime parks messages that failed five
         // times. They are normally empty, so anything in them is a file the pipeline gave up on.
+        //
+        // images-to-vectorize comes first because it is now the head of the pipeline: it is the
+        // queue the web application writes to when it hands off a batch, so it is where a delivery
+        // that has not started yet is waiting.
         var names = new[]
         {
-            _s.QueueName, "shrinked-image-to-classify", "images-to-send",
-            $"{_s.QueueName}-poison", "images-to-send-poison",
+            PipelineHandoff.VectorizeQueue, _s.QueueName, "shrinked-image-to-classify", "images-to-send",
+            $"{PipelineHandoff.VectorizeQueue}-poison", $"{_s.QueueName}-poison", "images-to-send-poison",
         };
         var depths = await _queue.GetDepthsAsync(names, ct);
         return Ok(new { configured = _queue.CanEnqueue, queues = depths });

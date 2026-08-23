@@ -172,7 +172,9 @@ public class SharePointStore
             ("ImagesSent", "Pubblicati"),
         };
 
-        var caml = "<View><Query><Where><Eq><FieldRef Name='FileLeafRef'/>" +
+        // RecursiveAll perche' il percorso durevole deposita i file in una sottocartella per
+        // immagine: una query limitata alla radice li darebbe per assenti anche quando ci sono.
+        var caml = "<View Scope='RecursiveAll'><Query><Where><Eq><FieldRef Name='FileLeafRef'/>" +
                    $"<Value Type='Text'>{System.Security.SecurityElement.Escape(fileName)}</Value></Eq></Where></Query>" +
                    "<RowLimit>3</RowLimit></View>";
 

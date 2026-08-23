@@ -1,24 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, downloadFile, isTerminal, type Item, type Job, type PipelineStatus } from "../api";
-import StatusChip from "../components/StatusChip";
-import ValidationPanel from "../components/ValidationPanel";
-import AuthImage from "../components/AuthImage";
+import { api, type HandoffResponse, type PipelineStatus } from "../api";
+import { recordDelivery, trackNameFor, type DeliveredFile } from "../deliveries";
+import TracePreview from "../components/TracePreview";
 
-export default function UploadView({ pipeline }: { pipeline: PipelineStatus | null }) {
-  const [job, setJob] = useState<Job | null>(null);
-  const [busy, setBusy] = useState(false);
+/**
+ * Hands pictures to the durable pipeline.
+ *
+ * This screen used to run the whole process while the author watched: it created a job, traced each
+ * picture inside the API, generated provisional metadata, let them be edited, and only then pushed
+ * the result downstream. It worked, and it was fragile in a specific way — the batch lived in the
+ * web application's memory, so a deploy, a plan change or the free tier going to sleep froze it
+ * halfway, and the author was left watching a screen that would never finish.
+ *
+ * Now the API only deposits the originals and posts one queue message each. There is nothing to
+ * watch, because there is nothing happening here: the Function traces, the pipeline classifies and
+ * writes the metadata, and the results turn up in the Backoffice a few minutes later. So the screen
+ * says what it can honestly say — what is about to be sent, and that it has been sent — and stops
+ * pretending to be a progress display for work happening somewhere else.
+ *
+ * The one judgement kept from the old screen is the tracing threshold, because it is the only thing
+ * the author can see that the machine cannot. It is now decided in the browser, on a canvas, and
+ * travels as a number in the queue message.
+ */
+
+type Staged = {
+  id: string;
+  file: File;
+  /** null leaves the cut to Otsu, inside the Function, on the full-size original. */
+  threshold: number | null;
+  /** Otsu computed locally: only the slider's resting position, never what gets sent. */
+  auto: number | null;
+};
+
+const IMAGE_NAME = /\.(jpe?g|png|webp|tiff?)$/i;
+const IMAGE_TYPE = /image\/(jpe?g|png|webp|tiff?)/i;
+
+let seq = 0;
+const nextId = () => `${Date.now().toString(36)}-${++seq}`;
+
+const fmtSize = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+export default function UploadView({
+  pipeline,
+  onNavigate,
+}: {
+  pipeline: PipelineStatus | null;
+  onNavigate?: (tab: "backoffice" | "monitor") => void;
+}) {
+  const [mode, setMode] = useState<"vector" | "raster">("vector");
+  const [staged, setStaged] = useState<Staged[]>([]);
+  const [delivering, setDelivering] = useState(false);
+  const [result, setResult] = useState<HandoffResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [dispatching, setDispatching] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [dispatchResult, setDispatchResult] = useState<string | null>(null);
-  const [thresholds, setThresholds] = useState<Record<string, number>>({});
-  const [revecting, setRevecting] = useState<Set<string>>(new Set());
-  const [bulkKw, setBulkKw] = useState("");
-  const [bulkApplying, setBulkApplying] = useState(false);
-  const [mode, setMode] = useState<"vector" | "raster">("vector");
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [noteSaved, setNoteSaved] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -32,155 +68,90 @@ export default function UploadView({ pipeline }: { pipeline: PipelineStatus | nu
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [showConfirm]);
 
-  const process = useCallback(async (files: File[]) => {
-    if (busy) {
-      setError("Attendi il completamento del job corrente prima di caricare altre immagini.");
-      return;
-    }
-    const images = files.filter((f) => /image\/(jpe?g|png|webp|tiff?)/i.test(f.type) || /\.(jpe?g|png|webp|tiff?)$/i.test(f.name));
-    if (images.length === 0) return setError("Trascina immagini JPEG/PNG/WEBP/TIFF.");
-    setError(null);
-    setBusy(true);
-    try {
-      const created = await api.createJob(images, mode);
-      setJob(created);
-      // Background processing: poll until terminal, with a bound so a stuck job can't loop forever.
-      let current = created;
-      for (let attempts = 0; attempts < 400 && current.items.some((i) => !isTerminal(i.status)); attempts++) {
-        await new Promise((r) => setTimeout(r, 1500));
-        current = await api.getJob(created.id);
-        setJob(current);
+  const add = useCallback(
+    (files: File[]) => {
+      const images = files.filter((f) => IMAGE_TYPE.test(f.type) || IMAGE_NAME.test(f.name));
+      if (images.length === 0) {
+        setError("Trascina immagini JPEG/PNG/WEBP/TIFF.");
+        return;
       }
-      if (current.items.some((i) => !isTerminal(i.status))) {
-        setError("L'elaborazione dura da oltre 10 minuti e continua in background. Seguila nella scheda Monitoraggio.");
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, mode]);
+      // The same file dropped twice would become two queue messages, two traced silhouettes and
+      // two items to clean up in the Backoffice.
+      const seen = new Set(staged.map((s) => `${s.file.name}:${s.file.size}`));
+      const fresh = images.filter((f) => !seen.has(`${f.name}:${f.size}`));
+      const skipped = images.length - fresh.length;
 
-  const patchItem = (itemId: string, patch: Partial<Item>) =>
-    setJob((j) => (j ? { ...j, items: j.items.map((it) => (it.id === itemId ? { ...it, ...patch } : it)) } : j));
+      setResult(null);
+      setError(
+        skipped > 0
+          ? `${skipped === 1 ? "Un'immagine era già" : `${skipped} immagini erano già`} in elenco: non ${
+              skipped === 1 ? "è stata aggiunta" : "sono state aggiunte"
+            } di nuovo.`
+          : null
+      );
+      if (fresh.length > 0)
+        setStaged((prev) => [...prev, ...fresh.map((file) => ({ id: nextId(), file, threshold: null, auto: null }))]);
+    },
+    [staged]
+  );
 
-  const save = async (item: Item) => {
-    if (!job) return;
-    try {
-      patchItem(item.id, await api.updateItem(job.id, item));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const patch = (id: string, p: Partial<Staged>) =>
+    setStaged((prev) => prev.map((s) => (s.id === id ? { ...s, ...p } : s)));
 
-  /**
-   * Sends the note together with the current metadata: the review process needs both, because
-   * the lesson is the difference between generated and corrected values, and the note explains it.
-   */
-  const saveNote = async (item: Item) => {
-    if (!job) return;
-    const note = (notes[item.id] ?? "").trim();
-    if (!note) return;
-    try {
-      patchItem(item.id, await api.updateItem(job.id, item, note));
-      setNotes((m) => ({ ...m, [item.id]: "" }));
-      setNoteSaved((s) => new Set(s).add(item.id));
-      setTimeout(() => setNoteSaved((s) => {
-        const next = new Set(s);
-        next.delete(item.id);
-        return next;
-      }), 2500);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const remove = (id: string) => setStaged((prev) => prev.filter((s) => s.id !== id));
 
-  const revector = async (item: Item, threshold: number | null) => {
-    if (!job) return;
-    setRevecting((s) => new Set(s).add(item.id));
-    try {
-      patchItem(item.id, await api.revectorize(job.id, item.id, threshold));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRevecting((s) => { const n = new Set(s); n.delete(item.id); return n; });
-    }
-  };
-
-  const applyBulkKeywords = async (mode: "add" | "remove") => {
-    if (!job || !bulkKw.trim()) return;
-    setError(null);
-    setBulkApplying(true);
-    const kws = bulkKw.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
-    const failed: string[] = [];
-    try {
-      for (const it of job.items) {
-        let next: string[];
-        if (mode === "add") {
-          const set = new Set(it.keywords.map((k) => k.toLowerCase()));
-          next = [...it.keywords, ...kws.filter((k) => !set.has(k))];
-        } else {
-          const rm = new Set(kws);
-          next = it.keywords.filter((k) => !rm.has(k.toLowerCase()));
-        }
-        try {
-          patchItem(it.id, await api.updateItem(job.id, { ...it, keywords: next }));
-        } catch {
-          failed.push(it.baseName);
-        }
-      }
-      if (failed.length > 0)
-        setError(`Keyword non aggiornate per ${failed.length} immagini: ${failed.slice(0, 3).join(", ")}.`);
-      else
-        setBulkKw("");
-    } finally {
-      setBulkApplying(false);
-    }
-  };
-
-  const dispatch = async () => {
-    if (!job) return;
-    setError(null);
+  const deliver = async () => {
+    if (staged.length === 0) return;
     setShowConfirm(false);
-    setDispatching(true);
+    setError(null);
+    setDelivering(true);
     try {
-      const { job: updated, results } = await api.dispatch(job.id);
-      setJob(updated);
-      const sent = results.filter((r) => r.ok).length;
-      const failed = results.filter((r) => !r.ok);
-      if (sent > 0) {
-        setDispatchResult(
-          `${sent} ${sent === 1 ? "immagine inviata" : "immagini inviate"} alla pipeline. ` +
-            "I titoli e le keyword definitivi arriveranno automaticamente dalla pipeline; puoi seguirne lo stato nelle schede Monitoraggio e Pipeline."
+      const res = await api.handoff(
+        staged.map((s) => s.file),
+        mode,
+        mode === "vector" ? staged.map((s) => s.threshold) : undefined
+      );
+
+      const failedBy = new Map((res.errors ?? []).map((e) => [e.file, e.error]));
+      recordDelivery({
+        id: nextId(),
+        at: new Date().toISOString(),
+        mode,
+        accepted: res.accepted,
+        rejected: res.rejected,
+        files: staged.map<DeliveredFile>((s) => ({
+          name: s.file.name,
+          trackName: trackNameFor(s.file.name),
+          threshold: mode === "vector" ? s.threshold : null,
+          ok: !failedBy.has(s.file.name),
+          error: failedBy.get(s.file.name),
+        })),
+      });
+
+      setResult(res);
+      // Only the rejected ones stay on screen: they are the only ones still worth a second attempt,
+      // and clearing them would hide a failure behind a success message.
+      setStaged((prev) => prev.filter((s) => failedBy.has(s.file.name)));
+      if (res.rejected > 0)
+        setError(
+          `${res.rejected} non consegnate e rimaste in elenco: ${res.errors?.[0]?.error ?? "errore sconosciuto"}`
         );
-      }
-      if (failed.length > 0) {
-        setError(`${failed.length} non inviate: ${failed[0].error ?? "errore sconosciuto"}`);
-      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setDispatching(false);
+      setDelivering(false);
     }
   };
 
-  const download = async (url: string, name: string) => {
-    try {
-      await downloadFile(url, name);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  const completed = job?.items.filter((i) => i.status === "completed" || i.status === "dispatched").length ?? 0;
+  const storageOff = pipeline != null && !pipeline.canEnqueue;
 
   return (
     <>
       <div className="modebar">
-        <span className="muted small">Cosa vuoi caricare?</span>
+        <span className="muted small">Cosa vuoi consegnare?</span>
         <button className={`modebtn ${mode === "vector" ? "on" : ""}`} onClick={() => setMode("vector")}>
           <strong>◆ Vettoriale</strong>
-          <span>traccia in SVG + EPS (+AI con Illustrator)</span>
+          <span>traccia in SVG + EPS, più il JPG</span>
         </button>
         <button className={`modebtn ${mode === "raster" ? "on" : ""}`} onClick={() => setMode("raster")}>
           <strong>▣ Immagine</strong>
@@ -188,15 +159,29 @@ export default function UploadView({ pipeline }: { pipeline: PipelineStatus | nu
         </button>
       </div>
 
+      {storageOff && (
+        <div className="notice err" role="alert">
+          Storage della pipeline non configurato: senza <code>Pipeline:StorageConnectionString</code> non c'è nessuna
+          coda a cui consegnare il lavoro.
+        </div>
+      )}
+
       <section
-        className={`drop ${dragOver ? "over" : ""} ${busy ? "busy" : ""}`}
+        className={`drop ${dragOver ? "over" : ""} ${delivering ? "busy" : ""}`}
         role="button"
         tabIndex={0}
-        aria-disabled={busy}
+        aria-disabled={delivering}
         aria-label={`Seleziona immagini. Modalità ${mode === "vector" ? "vettoriale" : "immagine"}.`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); process(Array.from(e.dataTransfer.files)); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          add(Array.from(e.dataTransfer.files));
+        }}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -205,130 +190,162 @@ export default function UploadView({ pipeline }: { pipeline: PipelineStatus | nu
           }
         }}
       >
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/tiff" multiple hidden disabled={busy}
-          onChange={(e) => process(Array.from(e.target.files ?? []))} />
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/tiff"
+          multiple
+          hidden
+          disabled={delivering}
+          onChange={(e) => {
+            add(Array.from(e.target.files ?? []));
+            // Without this, choosing the same file again after removing it fires no change event.
+            e.target.value = "";
+          }}
+        />
         <div className="drop-inner">
           <div className="drop-icon">⬆</div>
-          <div><strong>Trascina qui le immagini</strong> oppure clicca per selezionare</div>
+          <div>
+            <strong>Trascina qui le immagini</strong> oppure clicca per selezionare
+          </div>
           <div className="hint">
             {mode === "vector"
-              ? "Modalità vettoriale · produce SVG, EPS e JPG"
+              ? "Modalità vettoriale · la pipeline produce SVG, EPS e JPG"
               : "Modalità immagine · nessuna vettorializzazione, l'immagine resta com'è"}
           </div>
         </div>
       </section>
 
-      {busy && <div className="notice" role="status">Elaborazione in corso…</div>}
-      {error && <div className="notice err" role="alert">{error}</div>}
+      {error && (
+        <div className="notice err" role="alert">
+          {error}
+        </div>
+      )}
 
-      {job && (
+      {result && (
+        <div className="notice success handoff-done" role="status">
+          <button className="notice-close" onClick={() => setResult(null)} aria-label="Chiudi">
+            ×
+          </button>
+          <strong>
+            ✓ {result.accepted} {result.accepted === 1 ? "immagine consegnata" : "immagini consegnate"} alla pipeline
+          </strong>
+          <p>Da qui in poi procede da sola: puoi chiudere il browser o spegnere l'applicazione senza fermarla.</p>
+          <ol className="handoff-steps">
+            <li>{mode === "vector" ? "Tracciato in SVG ed EPS" : "Preparazione del JPG"}</li>
+            <li>Classificazione e metadati (titolo, descrizione, keyword)</li>
+            <li>Revisione nel Backoffice, poi invio al marketplace</li>
+          </ol>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn primary" onClick={() => onNavigate?.("backoffice")}>
+              Vai al Backoffice
+            </button>
+            <button className="btn" onClick={() => onNavigate?.("monitor")}>
+              Segui i lotti consegnati
+            </button>
+          </div>
+          <div className="muted small">
+            I risultati compaiono nel Backoffice a qualche minuto di distanza: la coda viene letta a intervalli.
+          </div>
+        </div>
+      )}
+
+      {staged.length > 0 && (
         <>
           <div className="toolbar">
-            <div>Job <code>{job.id.slice(0, 8)}</code> · {completed}/{job.items.length} pronti</div>
+            <div>
+              {staged.length} {staged.length === 1 ? "immagine pronta" : "immagini pronte"} ·{" "}
+              {mode === "vector" ? "vettoriale" : "immagine"}
+            </div>
             <div className="actions">
-              <button className="btn" onClick={() => download(`/api/jobs/${job.id}/export/adobe`, `adobe_${job.id.slice(0, 8)}.csv`)}>CSV Adobe Stock</button>
-              <button className="btn" onClick={() => download(`/api/jobs/${job.id}/export/freepik`, `freepik_${job.id.slice(0, 8)}.csv`)}>CSV Freepik</button>
-              <button className="btn primary" onClick={() => download(`/api/jobs/${job.id}/export/bundle`, `stock_${job.id.slice(0, 8)}.zip`)}>Bundle .zip</button>
-              {pipeline?.enabled && (
-                <button className="btn accent" onClick={() => setShowConfirm(true)} disabled={dispatching}>
-                  {dispatching ? "Invio…" : "Invia alla pipeline"}
-                </button>
-              )}
+              <button className="btn" onClick={() => setStaged([])} disabled={delivering}>
+                Svuota
+              </button>
+              <button
+                className="btn accent"
+                onClick={() => setShowConfirm(true)}
+                disabled={delivering || storageOff}
+              >
+                {delivering ? "Consegna…" : "Consegna alla pipeline"}
+              </button>
             </div>
           </div>
 
-          {dispatchResult && (
-            <div className="notice success">
-              ✓ {dispatchResult}
-              <button className="notice-close" onClick={() => setDispatchResult(null)}>×</button>
-            </div>
-          )}
-
-          {job.items.length > 1 && (
+          {mode === "vector" && (
             <div className="bulkbar">
-              <span className="muted small">Keyword su tutte ({job.items.length}):</span>
-              <input className="track-input" placeholder="es. inverno, festivo, 2027" value={bulkKw}
-                onChange={(e) => setBulkKw(e.target.value)} />
-              <button className="btn small" onClick={() => applyBulkKeywords("add")} disabled={bulkApplying}>
-                {bulkApplying ? "…" : "+ Aggiungi"}
-              </button>
-              <button className="btn small" onClick={() => applyBulkKeywords("remove")} disabled={bulkApplying}>
-                {bulkApplying ? "…" : "− Rimuovi"}
+              <span className="muted small">
+                La soglia decide cosa diventa nero e cosa bianco: potrace traccia il nero. Lasciala automatica se
+                l'anteprima già ti convince.
+              </span>
+              <button
+                className="btn small"
+                onClick={() => setStaged((prev) => prev.map((s) => ({ ...s, threshold: null })))}
+                disabled={delivering}
+              >
+                Tutte automatiche
               </button>
             </div>
           )}
 
           <div className="grid">
-            {job.items.map((it) => (
+            {staged.map((it) => (
               <article key={it.id} className="card">
                 <div className="preview">
-                  {it.previewUrl ? <AuthImage src={it.previewUrl} alt={`Anteprima: ${it.title || it.baseName}`} /> : <div className="noimg">…</div>}
+                  {mode === "vector" ? (
+                    <TracePreview
+                      file={it.file}
+                      threshold={it.threshold}
+                      onReady={(auto) => patch(it.id, { auto })}
+                    />
+                  ) : (
+                    <RasterThumb file={it.file} />
+                  )}
                 </div>
                 <div className="meta">
                   <div className="row between">
-                    <span className="fname" title={it.originalFileName}>{it.baseName}</span>
-                    <StatusChip status={it.status} />
+                    <span className="fname" title={it.file.name}>
+                      {it.file.name}
+                    </span>
+                    <span className="muted small">{fmtSize(it.file.size)}</span>
                   </div>
-                  <div className="meta-source">
-                    {it.metadataSource === "pipeline"
-                      ? <span className="msrc pipe">✓ metadati dalla pipeline</span>
-                      : <span className="msrc prov">metadati provvisori · definitivi dalla pipeline dopo l'invio</span>}
-                  </div>
-                  <label>Titolo</label>
-                  <input value={it.title} onChange={(e) => patchItem(it.id, { title: e.target.value })} onBlur={() => save(it)} />
-                  <label>Keyword ({it.keywords.length})</label>
-                  <textarea rows={3} value={it.keywords.join(", ")}
-                    onChange={(e) => patchItem(it.id, { keywords: e.target.value.split(",").map((k) => k.trim()).filter(Boolean) })}
-                    onBlur={() => save(it)} />
-                  <label>Categoria</label>
-                  <input value={it.category} onChange={(e) => patchItem(it.id, { category: e.target.value })} onBlur={() => save(it)} />
-                  {it.validation && <ValidationPanel v={it.validation} />}
-                  <div className="fb">
-                    <label htmlFor={`fb-${it.id}`}>
-                      Perché hai corretto i metadati? <span className="opt">facoltativo</span>
-                    </label>
-                    <textarea
-                      id={`fb-${it.id}`}
-                      rows={2}
-                      placeholder="Es. il titolo era troppo generico, e su Adobe Stock 'clipart' non porta vendite."
-                      value={notes[it.id] ?? ""}
-                      onChange={(e) => setNotes((m) => ({ ...m, [it.id]: e.target.value }))}
-                    />
-                    <div className="row between">
-                      <small>
-                        {it.feedback
-                          ? <>Ultima nota: <em>{it.feedback}</em></>
-                          : it.editedFromAi
-                            ? "Modifiche registrate. Una nota le rende molto più utili alla revisione."
-                            : "Le note alimentano la revisione del prompt."}
-                      </small>
-                      <button
-                        className="btn small"
-                        onClick={() => saveNote(it)}
-                        disabled={!(notes[it.id] ?? "").trim()}
-                      >
-                        {noteSaved.has(it.id) ? "salvata" : "Invia nota"}
-                      </button>
+
+                  {mode === "vector" && (
+                    <div className="revector">
+                      <label>
+                        Soglia:{" "}
+                        {it.threshold == null
+                          ? `automatica${it.auto != null ? ` (≈${it.auto})` : ""}`
+                          : it.threshold}
+                      </label>
+                      <div className="row" style={{ gap: 8 }}>
+                        <input
+                          type="range"
+                          min={0}
+                          max={255}
+                          value={it.threshold ?? it.auto ?? 128}
+                          disabled={delivering}
+                          onChange={(e) => patch(it.id, { threshold: Number(e.target.value) })}
+                          aria-label={`Soglia di tracciamento per ${it.file.name}`}
+                        />
+                        <button
+                          className="btn small"
+                          onClick={() => patch(it.id, { threshold: null })}
+                          disabled={delivering || it.threshold == null}
+                          title="Lascia decidere la soglia alla pipeline"
+                        >
+                          auto
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  {it.mode !== "raster" && (
-                  <div className="revector">
-                    <label>Soglia B/N: {thresholds[it.id] ?? "auto"}</label>
-                    <div className="row" style={{ gap: 8 }}>
-                      <input type="range" min={0} max={255} value={thresholds[it.id] ?? 128}
-                        onChange={(e) => setThresholds((m) => ({ ...m, [it.id]: Number(e.target.value) }))} />
-                      <button className="btn small" onClick={() => revector(it, thresholds[it.id] ?? null)} disabled={revecting.has(it.id)}>
-                        {revecting.has(it.id) ? "…" : "Rigenera"}
-                      </button>
-                      <button className="btn small" onClick={() => revector(it, null)} disabled={revecting.has(it.id)} title="Torna a soglia automatica">auto</button>
-                    </div>
-                  </div>
                   )}
-                  <div className="files">
-                    {it.files.svg && <button onClick={() => download(it.files.svg!, `${it.baseName}.svg`)}>SVG</button>}
-                    {it.files.ai && <button onClick={() => download(it.files.ai!, `${it.baseName}.ai`)}>AI</button>}
-                    {it.files.eps && <button onClick={() => download(it.files.eps!, `${it.baseName}.eps`)}>EPS</button>}
-                    {it.files.jpg && <button onClick={() => download(it.files.jpg!, `${it.baseName}.jpg`)}>JPG</button>}
+
+                  <div className="row between" style={{ marginTop: 10 }}>
+                    <span className="muted small">
+                      {mode === "vector" ? "SVG + EPS + JPG" : "solo JPG"}
+                    </span>
+                    <button className="btn small" onClick={() => remove(it.id)} disabled={delivering}>
+                      Togli
+                    </button>
                   </div>
                 </div>
               </article>
@@ -337,25 +354,67 @@ export default function UploadView({ pipeline }: { pipeline: PipelineStatus | nu
         </>
       )}
 
+      {staged.length === 0 && !result && (
+        <div className="empty">
+          Nessuna immagine in attesa. Trascinane qui sopra: verranno consegnate alla pipeline, che le elabora per conto
+          suo anche ad applicazione spenta.
+        </div>
+      )}
+
       {showConfirm && (
         <div className="modal-backdrop" onClick={() => setShowConfirm(false)} role="presentation">
-          <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="dispatch-title">
-            <h3 id="dispatch-title">Inviare alla pipeline?</h3>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="handoff-title"
+          >
+            <h3 id="handoff-title">
+              Consegnare {staged.length} {staged.length === 1 ? "immagine" : "immagini"} alla pipeline?
+            </h3>
             <p>
-              Le immagini pronte verranno depositate nel back-office e la pipeline le
-              <strong> classificherà, taggerà e caricherà su Adobe Stock e Freepik</strong>.
+              Gli originali vengono depositati e messi in coda. Da quel momento{" "}
+              <strong>il lavoro non dipende più da questa applicazione</strong>: prosegue anche se chiudi il browser o
+              se il sito si sospende.
             </p>
             <ul className="modal-list">
-              <li>I <strong>titoli e le keyword definitivi</strong> arriveranno dalla pipeline e sostituiranno quelli provvisori.</li>
-              <li>Puoi seguire l'avanzamento in <strong>Monitoraggio</strong> e <strong>Pipeline</strong>.</li>
+              <li>
+                {mode === "vector"
+                  ? "Vengono tracciate in SVG ed EPS, con la soglia che hai scelto."
+                  : "Nessun tracciato: viene preparato solo il JPG."}
+              </li>
+              <li>
+                <strong>Titoli, descrizioni e keyword</strong> li scrive la pipeline: non c'è nulla da compilare qui.
+              </li>
+              <li>
+                Li rivedi e li correggi nel <strong>Backoffice</strong>, prima dell'invio al marketplace.
+              </li>
             </ul>
             <div className="modal-actions">
-              <button ref={cancelRef} className="btn" onClick={() => setShowConfirm(false)}>Annulla</button>
-              <button className="btn accent" onClick={dispatch}>Sì, invia</button>
+              <button ref={cancelRef} className="btn" onClick={() => setShowConfirm(false)}>
+                Annulla
+              </button>
+              <button className="btn accent" onClick={deliver}>
+                Sì, consegna
+              </button>
             </div>
           </div>
         </div>
       )}
     </>
   );
+}
+
+/** Plain thumbnail for image mode, where nothing is traced and there is no threshold to judge. */
+function RasterThumb({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  return url ? <img src={url} alt={`Anteprima: ${file.name}`} /> : <div className="noimg">…</div>;
 }

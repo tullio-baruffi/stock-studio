@@ -139,7 +139,7 @@ export default function App() {
       </nav>
 
       <main id="main-panel" role="tabpanel">
-        {tab === "upload" && <UploadView pipeline={pipeline} />}
+        {tab === "upload" && <UploadView pipeline={pipeline} onNavigate={setTab} />}
         {tab === "backoffice" && <BackofficeView />}
         {tab === "monitor" && <MonitorView />}
         {tab === "pipeline" && <PipelineView />}

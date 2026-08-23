@@ -37,6 +37,22 @@ export type Item = {
 
 export type Job = { id: string; createdAt: string; mode?: string; items: Item[] };
 
+/**
+ * What comes back when pictures are handed to the durable pipeline.
+ *
+ * Deliberately thin: the handoff creates no job and tracks no state, because from the moment the
+ * message is on the queue the work belongs to the Function. All the API can honestly report is how
+ * many pictures it managed to deposit.
+ */
+export type HandoffResponse = {
+  ok: boolean;
+  accepted: number;
+  rejected: number;
+  items: { file: string; blob: string; threshold?: number | null }[];
+  errors: { file: string; error: string }[];
+  message: string;
+};
+
 /** Rules the review process distilled from the author's corrections. */
 export type Guidance = {
   version: number;
@@ -391,6 +407,28 @@ export const api = {
     files.forEach((f) => fd.append("files", f, f.name));
     fd.append("mode", mode);
     return f("/api/jobs", { method: "POST", body: fd }).then(jsonOrThrow);
+  },
+  /**
+   * Hands the pictures to the durable pipeline and returns as soon as they are deposited.
+   *
+   * Unlike createJob, nothing is processed while this call is open: the API stores each original
+   * and posts one queue message, then it is out of the way. That is the point — the batch keeps
+   * going through a deploy, a plan change or the site being switched off.
+   *
+   * `thresholds` carries the tracing cut the author picked per picture, one entry per file in the
+   * same order; "auto" leaves that picture to Otsu inside the Function.
+   */
+  handoff(files: File[], mode: "vector" | "raster" = "vector", thresholds?: (number | null)[]): Promise<HandoffResponse> {
+    const fd = new FormData();
+    files.forEach((file) => fd.append("files", file, file.name));
+    fd.append("mode", mode);
+    // Appended after the files and in the same order: the server pairs the two lists by position,
+    // which is the only pairing that survives two uploads sharing a file name.
+    files.forEach((_, i) => {
+      const t = thresholds?.[i];
+      fd.append("thresholds", t == null ? "auto" : String(Math.round(t)));
+    });
+    return f("/api/jobs/handoff", { method: "POST", body: fd }).then(jsonOrThrow);
   },
   getJob(id: string): Promise<Job> {
     return f(`/api/jobs/${id}`).then(jsonOrThrow);

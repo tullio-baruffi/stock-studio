@@ -22,7 +22,9 @@ public record HandoffResult(string BlobName, string OriginalFileName);
 public class PipelineHandoff
 {
     private const string OriginalsContainer = "originals-to-vectorize";
-    private const string VectorizeQueue = "images-to-vectorize";
+
+    /// <summary>Queue the durable path starts from. Public so the monitoring can watch it by name.</summary>
+    public const string VectorizeQueue = "images-to-vectorize";
 
     private readonly PipelineSettings _s;
     private readonly ILogger<PipelineHandoff> _log;
@@ -36,7 +38,7 @@ public class PipelineHandoff
     /// <summary>True when the storage account behind the pipeline is reachable from here.</summary>
     public bool Enabled => !string.IsNullOrWhiteSpace(_s.StorageConnectionString);
 
-    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, CancellationToken ct)
+    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, int? threshold, CancellationToken ct)
     {
         if (!Enabled)
             throw new InvalidOperationException(
@@ -63,6 +65,9 @@ public class PipelineHandoff
             BlobName = blobName,
             OriginalFileName = fileName,
             Mode = string.Equals(mode, "raster", StringComparison.OrdinalIgnoreCase) ? "raster" : "vector",
+            // Out of range means "no opinion", not "clamp to the edge": a value the author never
+            // chose would trace a silhouette nobody asked for, where Otsu at least reads the image.
+            Threshold = threshold is >= 0 and <= 255 ? threshold : null,
         }.ToString(), ct);
 
         _log.LogInformation("Consegnato alla pipeline: {File} come {Blob}", fileName, blobName);

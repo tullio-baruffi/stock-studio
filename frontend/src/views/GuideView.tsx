@@ -15,13 +15,16 @@ export default function GuideView() {
         <ol className="guide-steps">
           <li><strong>Pianifica</strong> (opzionale) — nella scheda <em>Opportunità</em> scegli un tema in finestra ottimale.</li>
           <li><strong>Scegli la modalità</strong> — <em>Vettoriale</em> (traccia in SVG/EPS) oppure <em>Immagine</em> (foto e grafiche già pronte, nessun tracciato).</li>
-          <li><strong>Carica</strong> — trascini le immagini nella scheda <em>Carica</em> (anche in blocco).</li>
-          <li><strong>Elabora</strong> <span className="kbadge k-det">🔒</span> — in vettoriale il motore produce <code>SVG</code>, <code>EPS</code>, <code>JPG</code> (e <code>AI</code> con Illustrator); in modalità immagine il file resta com'è.</li>
-          <li><strong>Metadati + controllo qualità</strong> <span className="kbadge k-gen">✨</span><span className="kbadge k-det">🔒</span> — titolo/keyword <em>generati</em> dall'AI e verificati con un punteggio SEO <em>a regole</em> per Adobe e Freepik.</li>
-          <li><strong>Esporta / Invia</strong> <span className="kbadge k-det">🔒</span> — scarichi i CSV e il bundle <code>.zip</code>, oppure premi <em>Invia alla pipeline</em>.</li>
-          <li><strong>Pipeline Azure</strong> <span className="kbadge k-gen">✨</span> — il file finisce in SharePoint (<code>ImagesToClassify</code>): l'AI classifica, l'EXIF viene scritto, e l'upload FTP invia ai siti stock.</li>
-          <li><strong>Pubblicato</strong> — quando la pipeline conferma, l'immagine risulta <em>Pubblicata</em> nel monitoraggio.</li>
+          <li><strong>Carica</strong> — trascini le immagini nella scheda <em>Carica</em> (anche in blocco). In vettoriale vedi subito l'anteprima del tracciato e puoi regolarne la <strong>soglia</strong>, immagine per immagine.</li>
+          <li><strong>Consegna</strong> — premi <em>Consegna alla pipeline</em>: gli originali vengono depositati e messi in coda. Da qui in poi <strong>il lavoro non dipende più dall'applicazione</strong>, che puoi chiudere o spegnere.</li>
+          <li><strong>Pipeline Azure</strong> <span className="kbadge k-gen">✨</span> — una Function traccia il file e lo deposita in SharePoint (<code>ImagesToClassify</code>); l'AI classifica e scrive titolo, descrizione e keyword; l'EXIF viene scritto e l'upload FTP invia ai siti stock.</li>
+          <li><strong>Rivedi nel Backoffice</strong> <span className="kbadge k-det">🔒</span> — a qualche minuto di distanza le immagini compaiono nel <em>Backoffice</em>, con i metadati già scritti: lì li correggi e li mandi al marketplace.</li>
+          <li><strong>Pubblicato</strong> — quando la pipeline conferma, l'immagine risulta negli stadi finali del funnel.</li>
         </ol>
+        <p className="muted">
+          L'elaborazione non avviene più dentro l'applicazione: prima viveva nella memoria dell'API, e un
+          riavvio a metà lotto la interrompeva. Ora vive in una coda, e nessuno la può fermare per sbaglio.
+        </p>
       </section>
 
       <section className="guide-sec">
@@ -131,14 +134,14 @@ export default function GuideView() {
         <div className="guide-note">
           <p>
             <strong>◆ Vettoriale</strong> — per silhouette e grafiche da vendere come vettori: l'immagine
-            viene tracciata e ottieni <code>SVG</code> + <code>EPS</code> (+ <code>AI</code> con Illustrator),
-            più un <code>JPG</code> di anteprima. Puoi regolare la <strong>soglia B/N</strong> e rigenerare.
+            viene tracciata e ottieni <code>SVG</code> + <code>EPS</code>, più un <code>JPG</code>.
+            Prima di consegnare vedi l'<strong>anteprima del tracciato</strong> e puoi regolarne la
+            <strong> soglia</strong>: il disegno che vedi è esattamente quello che verrà tracciato.
           </p>
           <p>
             <strong>▣ Immagine</strong> — per foto e grafiche <em>già finite</em>: nessuna vettorializzazione,
-            il file resta identico e viene solo normalizzato in JPEG. Metadati, controllo qualità, CSV e
-            invio alla pipeline funzionano esattamente allo stesso modo; nel CSV viene indicato il <code>.jpg</code>
-            invece dell'<code>.eps</code>.
+            nessuna soglia, il file viene solo normalizzato in JPEG. Classificazione, metadati e invio al
+            marketplace funzionano esattamente allo stesso modo.
           </p>
         </div>
       </section>
@@ -147,12 +150,13 @@ export default function GuideView() {
         <h2>Le schede</h2>
         <div className="guide-cards">
           <div className="gcard"><div className="gcard-h">⬆ Carica</div>
-            Trascini le immagini, rivedi titolo e keyword con il <strong>punteggio SEO</strong>, regoli la
-            <strong> soglia B/N</strong>, modifichi le keyword <strong>in blocco</strong>, scarichi CSV/bundle e invii alla pipeline.</div>
+            Trascini le immagini, in vettoriale regoli la <strong>soglia del tracciato</strong> guardandone
+            l'anteprima, e le <strong>consegni alla pipeline</strong>. Non c'è nulla da compilare: titoli e
+            keyword li scrive la pipeline.</div>
           <div className="gcard"><div className="gcard-h">📊 Monitoraggio</div>
-            Storico dei job con avanzamento live. Apri un job per vedere lo <strong>step tracker</strong>
-            (Caricata → Vettorializzata → Metadati → Inviata → Pubblicata), i tempi, ritentare gli errori e
-            <strong> ri-esportare, ri-inviare o eliminare</strong> job passati.</div>
+            I <strong>lotti che hai consegnato</strong>, con la coda d'ingresso e, per ogni file,
+            <strong> "Dove si trova?"</strong> fra gli stadi SharePoint. È una ricevuta locale: le immagini
+            vivono nella pipeline, non qui.</div>
           <div className="gcard"><div className="gcard-h">🔀 Pipeline</div>
             <strong>Le mie immagini</strong> con "Dove si trova?", il <strong>funnel</strong> degli stadi SharePoint,
             la <strong>profondità delle code</strong> Azure e la ricerca traccia-un-file.</div>
@@ -302,20 +306,20 @@ export default function GuideView() {
       </section>
 
       <section className="guide-sec">
-        <h2>Titolo e keyword: provvisori → definitivi <span className="kbadge k-gen">✨ generativo</span></h2>
+        <h2>Titolo e keyword: li scrive la pipeline <span className="kbadge k-gen">✨ generativo</span></h2>
         <div className="guide-note">
           <p>
-            Appena carichi, il sistema genera titolo e keyword <strong>provvisori</strong> (badge grigio
-            <span className="msrc prov" style={{ margin: "0 4px" }}>provvisori</span>) così hai subito qualcosa con cui lavorare.
+            Nella scheda <em>Carica</em> non c'è nulla da compilare, ed è voluto: titolo, descrizione e keyword
+            li genera il <strong>tuo sistema</strong> (la Logic App <code>metadata-generator-001</code>) dopo che
+            la pipeline ha classificato l'immagine. Un valore provvisorio scritto qui sarebbe comunque
+            sovrascritto da quello.
           </p>
           <p>
-            Quando premi <em>Invia alla pipeline</em>, il <strong>tuo sistema</strong> (Logic App) genera i valori
-            definitivi: tornano in automatico e sostituiscono i provvisori, con badge verde
-            <span className="msrc pipe" style={{ margin: "0 4px" }}>da pipeline</span>.
-            Anche i CSV esportati dopo useranno questi valori.
+            Li trovi già scritti nel <strong>Backoffice</strong>, a qualche minuto dalla consegna: è lì che si
+            rileggono, si correggono e si mandano al marketplace.
           </p>
           <p className="caveat">
-            ⚠ Entrambi sono prodotti da un'AI: <strong>rileggili prima di pubblicare</strong>. Il punteggio SEO
+            ⚠ Sono prodotti da un'AI: <strong>rileggili prima di pubblicare</strong>. Il punteggio SEO
             <span className="kbadge k-det">🔒</span> intercetta gli errori formali (marchi, limiti, duplicati), ma non
             può accorgersi se una descrizione è semplicemente sbagliata rispetto all'immagine.
           </p>
@@ -326,11 +330,11 @@ export default function GuideView() {
         <h2>Consigli</h2>
         <ul className="guide-tips">
           <li>Parti da <strong>Opportunità</strong>: creare su un tema in finestra ottimale rende molto più che uno fuori stagione.</li>
-          <li>Punta a un punteggio SEO <strong>≥ 80</strong> e a <strong>25+ keyword</strong> prima di inviare.</li>
+          <li>Punta a un punteggio SEO <strong>≥ 80</strong> e a <strong>25+ keyword</strong> prima di mandare al marketplace dal Backoffice.</li>
           <li>Mai usare <strong>nomi di marchi</strong> in titolo o keyword: causano il rifiuto (l'app li blocca).</li>
-          <li>Con più immagini usa la <strong>modifica keyword in blocco</strong> per aggiungere i tag comuni in un colpo solo.</li>
-          <li>Se il tracciato non ti convince, regola la <strong>soglia B/N</strong> e premi <em>Rigenera</em>; per la massima fedeltà usa il motore <strong>Illustrator</strong>.</li>
-          <li>Dopo l'invio, apri <strong>Pipeline ▸ Le mie immagini</strong> e premi <em>Dove si trova?</em> per vedere lo stadio di ogni file.</li>
+          <li>Se il tracciato non ti convince, sposta la <strong>soglia</strong> prima di consegnare: l'anteprima mostra esattamente ciò che verrà tracciato, e dopo la consegna non si torna indietro.</li>
+          <li>Lascia la soglia <strong>automatica</strong> quando l'anteprima già ti convince: la calcola la pipeline sull'originale a piena risoluzione, quindi meglio della stima mostrata qui.</li>
+          <li>Dopo la consegna, in <strong>Monitoraggio</strong> premi <em>Dove si trova?</em> per vedere lo stadio di ogni file.</li>
           <li>Controlla la scheda <strong>Sistema</strong> se qualcosa non parte: ti dice quale servizio è giù.</li>
         </ul>
       </section>
