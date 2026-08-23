@@ -347,7 +347,11 @@ async function f(url: string, init: RequestInit = {}): Promise<Response> {
 
   try {
     const res = await fetch(apiUrl(url), { ...init, signal: controller.signal, redirect: "manual" });
-    if (res.type === "opaqueredirect" || res.status === 0) redirectToLogin();
+    // Solo un redirect vero, o la pagina interstiziale della piattaforma, valgono come sessione
+    // scaduta. Un controllo piu' largo -- per esempio "status 0" -- rischierebbe di mandare al
+    // login per una risposta anomala qualsiasi, e un rimbalzo al login e' l'errore piu' fastidioso
+    // che si possa infliggere: riparte, torna, riparte.
+    if (res.type === "opaqueredirect") redirectToLogin();
     if ((res.headers.get("content-type") ?? "").includes("text/html")) redirectToLogin();
     return res;
   } finally {

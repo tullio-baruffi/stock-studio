@@ -258,44 +258,53 @@ public class SharePointStore
     }
 
     /// <summary>
-    /// One page of library items with the metadata the author reviews. Paged through CAML
-    /// positions rather than skip/take: these libraries hold thousands of items.
+    /// One page of library items with the metadata the author reviews.
+    ///
+    /// Due strategie, perche' nessuna delle due basta da sola. Quella piatta ('RecursiveAll' con un
+    /// cursore sull'Id) da' pagine piene, ma su una libreria oltre i 5000 elementi SharePoint la
+    /// rifiuta: deve considerare l'intera lista e si ferma sulla soglia. Quella per cartelle
+    /// ('Recursive' col cursore opaco) regge qualunque dimensione ma impagina dentro ogni cartella,
+    /// e in una libreria di sottocartelle restituisce una manciata di righe per volta.
+    ///
+    /// Si prova quindi la prima e si ripiega sulla seconda, che e' come funzionava prima: la
+    /// libreria grande torna sfogliabile com'era, le altre migliorano. Il cursore porta un prefisso
+    /// perche' i due formati non si confondano fra una pagina e l'altra.
     /// </summary>
     public SharePointPage ListItems(string listTitle, int take, string? pageToken, string? search, string? field = null)
+    {
+        if (pageToken?.StartsWith("sp:", StringComparison.Ordinal) == true)
+            return ListByFolder(listTitle, take, pageToken[3..], search, field);
+
+        try
+        {
+            return ListFlat(listTitle, take, pageToken, search, field);
+        }
+        catch (Exception ex) when (IsThreshold(ex))
+        {
+            _log.LogInformation(
+                "{List}: elenco piatto oltre la soglia, ripiego sull'impaginazione per cartelle", listTitle);
+            return ListByFolder(listTitle, take, null, search, field);
+        }
+    }
+
+    private static bool IsThreshold(Exception ex) =>
+        ex.Message.Contains("soglia", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("threshold", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>La strategia precedente: cursore opaco di SharePoint, impagina per cartella.</summary>
+    private SharePointPage ListByFolder(string listTitle, int take, string? pagingInfo, string? search, string? field)
     {
         using var ctx = CreateContext();
         var list = ctx.Web.Lists.GetByTitle(listTitle);
 
-        // Above 5000 items SharePoint refuses any query that has to scan a non-indexed column, so
-        // the default listing carries no Where clause at all and no sort other than Id, which is
-        // always indexed.
-        string where = "";
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var safe = System.Security.SecurityElement.Escape(search.Trim());
-            // BeginsWith and Eq are the only operators that can use an index; Contains always
-            // scans, so it is reserved for the columns and libraries where scanning is allowed.
-            where = (field ?? "name").ToLowerInvariant() switch
-            {
-                "title" => $"<Where><BeginsWith><FieldRef Name='Title'/><Value Type='Text'>{safe}</Value></BeginsWith></Where>",
-                "stato" => $"<Where><Contains><FieldRef Name='Stato'/><Value Type='Text'>{safe}</Value></Contains></Where>",
-                "keyword" => $"<Where><Contains><FieldRef Name='Tags'/><Value Type='Note'>{safe}</Value></Contains></Where>",
-                _ => $"<Where><BeginsWith><FieldRef Name='FileLeafRef'/><Value Type='Text'>{safe}</Value></BeginsWith></Where>",
-            };
-        }
-
         var caml = new CamlQuery
         {
-            // Scope 'Recursive' walks every folder but returns only file items, so folders are
-            // excluded without a Where clause on the non-indexed FSObjType — which is what broke
-            // above the 5000-item threshold. Descending Id means newest first, and is also more
-            // stable than Modified: editing metadata would reshuffle the page while reviewing.
-            ViewXml = "<View Scope='Recursive'><Query>" + where +
+            ViewXml = "<View Scope='Recursive'><Query>" + BuildWhere(search, field, null) +
                       "<OrderBy><FieldRef Name='ID' Ascending='FALSE'/></OrderBy></Query>" +
                       $"<RowLimit>{Math.Clamp(take, 1, 100)}</RowLimit></View>",
         };
-        if (!string.IsNullOrWhiteSpace(pageToken))
-            caml.ListItemCollectionPosition = new ListItemCollectionPosition { PagingInfo = pageToken };
+        if (!string.IsNullOrWhiteSpace(pagingInfo))
+            caml.ListItemCollectionPosition = new ListItemCollectionPosition { PagingInfo = pagingInfo };
 
         var items = list.GetItems(caml);
         ctx.Load(items);
@@ -303,20 +312,95 @@ public class SharePointStore
 
         var rows = items
             .Where(i => !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
-            .Select(i => new SharePointItem(
-                i.Id,
-                Str(i, "FileLeafRef") ?? "",
-                Str(i, "Title") ?? "",
-                Str(i, FieldDescription) ?? "",
-                Str(i, "Tags") ?? "",
-                Str(i, "Stato") ?? "",
-                Flag(i, "Invia"),
-                Flag(i, "Inviato"),
-                Str(i, "Modified") ?? "",
-                Str(i, "FileRef") ?? "",
-                CheckedOutBy(i))).ToList();
+            .Select(ToItem)
+            .ToList();
 
-        return new SharePointPage(rows, items.ListItemCollectionPosition?.PagingInfo);
+        var next = items.ListItemCollectionPosition?.PagingInfo;
+        return new SharePointPage(rows, next == null ? null : "sp:" + next);
+    }
+
+    private static string BuildWhere(string? search, string? field, string? idCondition)
+    {
+        var conditions = new List<string>();
+        if (idCondition != null) conditions.Add(idCondition);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var safe = System.Security.SecurityElement.Escape(search.Trim());
+            // BeginsWith and Eq are the only operators that can use an index; Contains always
+            // scans, so it is reserved for the columns and libraries where scanning is allowed.
+            conditions.Add((field ?? "name").ToLowerInvariant() switch
+            {
+                "title" => $"<BeginsWith><FieldRef Name='Title'/><Value Type='Text'>{safe}</Value></BeginsWith>",
+                "stato" => $"<Contains><FieldRef Name='Stato'/><Value Type='Text'>{safe}</Value></Contains>",
+                "keyword" => $"<Contains><FieldRef Name='Tags'/><Value Type='Note'>{safe}</Value></Contains>",
+                _ => $"<BeginsWith><FieldRef Name='FileLeafRef'/><Value Type='Text'>{safe}</Value></BeginsWith>",
+            });
+        }
+
+        return conditions.Count switch
+        {
+            0 => "",
+            1 => $"<Where>{conditions[0]}</Where>",
+            _ => $"<Where><And>{conditions[0]}{conditions[1]}</And></Where>",
+        };
+    }
+
+    /// <summary>Elenco piatto con cursore sull'Id: pagine piene, ma non regge oltre la soglia.</summary>
+    private SharePointPage ListFlat(string listTitle, int take, string? pageToken, string? search, string? field)
+    {
+        using var ctx = CreateContext();
+        var list = ctx.Web.Lists.GetByTitle(listTitle);
+
+        var wanted = Math.Clamp(take, 1, 100);
+        var rows = new List<SharePointItem>();
+        var cursor = int.TryParse(pageToken, out var afterId) && afterId > 0 ? afterId : int.MaxValue;
+        var more = false;
+
+        // Le cartelle sono elementi di lista e consumano il RowLimit, ma non si vedono: una
+        // libreria fatta di sottocartelle per immagine restituiva una riga visibile per pagina.
+        // Filtrarle nella query non si puo' -- FSObjType non e' indicizzabile e oltre la soglia fa
+        // fallire tutto -- quindi si legge una finestra piu' larga e, se non basta, si continua.
+        // Il numero di giri e' limitato: meglio una pagina corta che una richiesta che non finisce.
+        for (var round = 0; round < 6 && rows.Count < wanted; round++)
+        {
+            var fetch = Math.Min(wanted * 4, 500);
+            var where = BuildWhere(search, field,
+                $"<Lt><FieldRef Name='ID'/><Value Type='Counter'>{cursor}</Value></Lt>");
+
+            var caml = new CamlQuery
+            {
+                // RecursiveAll, non Recursive: sembrano sinonimi e non lo sono. Con 'Recursive'
+                // SharePoint impagina cartella per cartella e il RowLimit vale dentro ciascuna, il
+                // che dava una riga per pagina. 'RecursiveAll' restituisce un elenco piatto.
+                //
+                // Ordine per Id discendente: mostra le piu' recenti per prime ed e' piu' stabile di
+                // Modified, che rimescolerebbe la pagina proprio mentre la si revisiona.
+                ViewXml = "<View Scope='RecursiveAll'><Query>" + where +
+                          "<OrderBy><FieldRef Name='ID' Ascending='FALSE'/></OrderBy></Query>" +
+                          $"<RowLimit>{fetch}</RowLimit></View>",
+            };
+
+            var items = list.GetItems(caml);
+            ctx.Load(items);
+            ctx.ExecuteQuery();
+
+            var raw = 0;
+            foreach (var i in items)
+            {
+                raw++;
+                cursor = i.Id;
+                if (string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal)) continue;
+                rows.Add(ToItem(i));
+                if (rows.Count == wanted) break;
+            }
+
+            // Finestra esaurita senza arrivare in fondo: c'e' altro piu' sotto, si continua.
+            more = rows.Count == wanted || raw == fetch;
+            if (raw < fetch) break;
+        }
+
+        return new SharePointPage(rows, more && cursor != int.MaxValue ? cursor.ToString() : null);
     }
 
     /// <summary>
@@ -515,6 +599,100 @@ public class SharePointStore
 
         _log.LogInformation("SharePoint: {Src} spostato in {Dst}", sourceServerRelativeUrl, target);
         return target;
+    }
+
+    /// <summary>
+    /// Rimuove le cartelle rimaste vuote nella libreria, restituendo quante ne ha tolte.
+    ///
+    /// Ogni immagine viene depositata in una sottocartella col suo nome, e quando i file passano
+    /// allo stadio successivo il contenitore resta li'. Non si vede nel Backoffice, ma e' un
+    /// elemento di lista come gli altri e occupa un posto del limite di riga a ogni pagina che lo
+    /// attraversa: accumulate a migliaia, sono la ragione per cui una pagina da ventiquattro
+    /// tornava con una riga sola.
+    /// </summary>
+    public (int Removed, int Inspected) RemoveEmptyFolders(string listTitle, int max = 500)
+    {
+        using var ctx = CreateContext();
+        var list = ctx.Web.Lists.GetByTitle(listTitle);
+        ctx.Load(list, l => l.RootFolder.ServerRelativeUrl);
+        ctx.ExecuteQuery();
+
+        // Solo le cartelle, ordinate per Id: FSObjType qui e' l'oggetto della ricerca e non un
+        // filtro accessorio, e la query resta piccola perche' il limite la tiene corta.
+        var caml = new CamlQuery
+        {
+            ViewXml = "<View Scope='RecursiveAll'><Query><Where>" +
+                      "<Eq><FieldRef Name='FSObjType'/><Value Type='Integer'>1</Value></Eq>" +
+                      "</Where><OrderBy><FieldRef Name='ID' Ascending='TRUE'/></OrderBy></Query>" +
+                      $"<RowLimit>{Math.Clamp(max, 1, 2000)}</RowLimit></View>",
+        };
+
+        var items = list.GetItems(caml);
+        ctx.Load(items);
+        ctx.ExecuteQuery();
+
+        var root = list.RootFolder.ServerRelativeUrl.TrimEnd('/');
+        var removed = 0;
+        var inspected = 0;
+
+        foreach (var i in items)
+        {
+            var url = Str(i, "FileRef");
+            if (string.IsNullOrWhiteSpace(url)) continue;
+            // La radice non e' una cartella da togliere, e nemmeno le cartelle di sistema.
+            if (string.Equals(url.TrimEnd('/'), root, StringComparison.OrdinalIgnoreCase)) continue;
+            inspected++;
+
+            try
+            {
+                using var inner = CreateContext();
+                var folder = inner.Web.GetFolderByServerRelativeUrl(url);
+                inner.Load(folder, f => f.ItemCount);
+                inner.ExecuteQuery();
+                if (folder.ItemCount != 0) continue;
+
+                folder.DeleteObject();
+                inner.ExecuteQuery();
+                removed++;
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Cartella non rimossa: {Folder}", url);
+            }
+        }
+
+        _log.LogInformation("{List}: rimosse {Removed} cartelle vuote su {Inspected} esaminate",
+                            listTitle, removed, inspected);
+        return (removed, inspected);
+    }
+
+    /// <summary>
+    /// Elimina la cartella se e' rimasta vuota, ignorando ogni ostacolo.
+    ///
+    /// Cancellare le consegne di un'immagine lascerebbe indietro il contenitore: una cartella vuota
+    /// non si vede nel Backoffice ma occupa un posto del limite di riga a ogni pagina che la
+    /// attraversa, quindi accumularle vuol dire pagine sempre piu' magre. Non e' un'operazione
+    /// critica: se non riesce, si e' solo lasciato dell'ordine da fare.
+    /// </summary>
+    public void DeleteFolderIfEmpty(string folderServerRelativeUrl)
+    {
+        try
+        {
+            using var ctx = CreateContext();
+            var folder = ctx.Web.GetFolderByServerRelativeUrl(folderServerRelativeUrl);
+            ctx.Load(folder, f => f.ItemCount, f => f.Name);
+            ctx.ExecuteQuery();
+
+            if (folder.ItemCount != 0) return;
+
+            folder.DeleteObject();
+            ctx.ExecuteQuery();
+            _log.LogInformation("SharePoint: cartella vuota rimossa {Folder}", folderServerRelativeUrl);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Cartella vuota non rimossa: {Folder}", folderServerRelativeUrl);
+        }
     }
 
     public void DeleteItem(string listTitle, int id)

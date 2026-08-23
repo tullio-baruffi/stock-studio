@@ -266,10 +266,11 @@ export default function BackofficeView() {
 
   const stage = STAGES.find((s) => s.library === library)!;
 
-  // Position in the library. The page size is fixed, so the first item's index follows from the
-  // page number; the last one from how many rows this page actually returned.
-  const first = (pageNumber - 1) * PAGE_SIZE + 1;
-  const last = first + Math.max(items.length, 1) - 1;
+  // Posizione nella libreria. Non si puo' piu' dedurre dal numero di pagina: le cartelle occupano
+  // posti del limite e un gruppo di consegne occupa una riga sola, quindi una pagina non contiene
+  // quasi mai esattamente PAGE_SIZE elementi. Dire "elementi 25-48" sarebbe una precisione finta;
+  // meglio dire quante righe si stanno guardando.
+  const righe = items.length;
 
   return (
     <div className="backoffice">
@@ -496,10 +497,8 @@ export default function BackofficeView() {
             {loading ? "Carico…" : (
               <>
                 <strong>Pagina {pageNumber}</strong>
-                {items.length > 0 && (
-                  <> · elementi {first.toLocaleString("it-IT")}–{last.toLocaleString("it-IT")}</>
-                )}
-                {total != null && <> di circa {total.toLocaleString("it-IT")}</>}
+                {righe > 0 && <> · {righe} {righe === 1 ? "riga" : "righe"}</>}
+                {total != null && <> · libreria di circa {total.toLocaleString("it-IT")}</>}
               </>
             )}
           </span>

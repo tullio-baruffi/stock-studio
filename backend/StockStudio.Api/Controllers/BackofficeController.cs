@@ -403,6 +403,41 @@ public class BackofficeController : ControllerBase
     }
 
     /// <summary>
+    /// Toglie dalla libreria le cartelle rimaste vuote.
+    ///
+    /// Manutenzione, non funzionalita': ogni immagine viene depositata in una sottocartella e
+    /// quando i file passano allo stadio successivo il contenitore resta indietro. Invisibile nel
+    /// Backoffice, ma occupa un posto in ogni pagina che lo attraversa -- ed e' il motivo per cui
+    /// sfogliare una libraria piena di residui restituiva una riga per volta.
+    /// </summary>
+    [HttpPost("tidy")]
+    public IActionResult Tidy([FromQuery] string library, [FromQuery] int max = 500)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        try
+        {
+            var (removed, inspected) = _sp.RemoveEmptyFolders(library, max);
+            return Ok(new
+            {
+                ok = true,
+                rimosse = removed,
+                esaminate = inspected,
+                messaggio = removed == 0
+                    ? "Nessuna cartella vuota da rimuovere."
+                    : $"{removed} cartelle vuote rimosse su {inspected} esaminate. "
+                      + "Se erano molte, ripeti: se ne esamina un blocco per volta.",
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Pulizia cartelle non riuscita su {Library}", library);
+            return Ok(new { ok = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Elimina l'immagine, cioe' tutte le sue consegne.
     ///
     /// Una riga del Backoffice rappresenta un gruppo: cancellare il solo portatore lascerebbe SVG
@@ -419,6 +454,7 @@ public class BackofficeController : ControllerBase
         {
             var carrier = _sp.GetItem(library, id);
             var siblings = _sp.GetDeliverableSiblings(library, carrier);
+            var folder = FolderOf(carrier.ServerRelativeUrl);
 
             _sp.DeleteItem(library, id);
             var removed = 1;
@@ -429,6 +465,10 @@ public class BackofficeController : ControllerBase
                 try { _sp.DeleteItem(library, s.Id); removed++; }
                 catch (Exception ex) { _log.LogWarning(ex, "Consegna non eliminata: {File}", s.FileName); }
             }
+
+            // Svuotato il gruppo, resta il contenitore: invisibile nel Backoffice ma capace di
+            // consumare un posto per pagina a ogni sfogliata, per sempre.
+            if (IsGroupFolder(library, folder)) _sp.DeleteFolderIfEmpty(folder);
 
             return Ok(new { ok = true, eliminate = removed, nonEliminate = siblings.Count + 1 - removed });
         }

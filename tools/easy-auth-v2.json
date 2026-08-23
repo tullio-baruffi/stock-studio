@@ -20,9 +20,6 @@
         },
         "validation": {
           "allowedAudiences": ["16b9c79e-d8d4-4b5a-b114-bb9d7ed27cb2"]
-        },
-        "login": {
-          "loginParameters": ["prompt=select_account"]
         }
       }
     },

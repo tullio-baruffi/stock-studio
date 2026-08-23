@@ -76,6 +76,7 @@ namespace MJ.Classifier
             log.LogInformation($"Queue trigger function processing: {myQueueItem}");
 
             ResizeQueueMessage message = null;
+            var claimed = false;
 
             try
             {
@@ -102,17 +103,18 @@ namespace MJ.Classifier
                 log.LogInformation($"Get image to resize: blobPath {message.PathBlob}");
 
                 // Stessa immagine, due strade: la vettorializzazione accoda subito, il poller di
-                // SharePoint ripassa quindici minuti dopo e riaccoda lo stesso file. Senza questo
-                // controllo la seconda volta si paga un'altra chiamata al modello per riscrivere
-                // metadati gia' buoni -- e se nel frattempo l'autore li avesse corretti a mano, li
-                // cancellerebbe. Vale anche per i ritentativi della coda.
-                var state = SharePointHelper.TryReadMetadataState(
+                // SharePoint la riaccoda per conto suo, e i due messaggi possono distare pochi
+                // secondi. Chiedersi solo se i metadati esistono non basta -- quando il doppione
+                // arriva non esistono ancora -- quindi chi arriva primo lascia un segno e chi arriva
+                // dopo si ritira.
+                var claim = SharePointHelper.TryClaimForClassification(
                     _sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
-                if (state.Ok && state.HasMetadata)
+                if (!claim.Proceed)
                 {
-                    log.LogInformation($"{name}: gia' descritta, non la riclassifico.");
+                    log.LogInformation($"{name}: {claim.Reason}, non la riclassifico.");
                     return;
                 }
+                claimed = true;
                 using var memoryStream = SharePointHelper.GetFileFromSharePoint(_sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
                 log.LogInformation($"Image found");
 
@@ -129,6 +131,13 @@ namespace MJ.Classifier
             catch (Exception ex)
             {
                 log.LogError(ex, $"Error while processing queue item: {message?.IdBlob ?? "(unknown)"}");
+
+                // La presa in carico va restituita: se restasse, il messaggio riprovato dalla coda
+                // la troverebbe e si ritirerebbe, e l'immagine non verrebbe descritta mai piu'.
+                if (claimed && message?.ServerRelativeUrl != null)
+                    SharePointHelper.ReleaseClassificationClaim(
+                        _sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
+
                 // Let the queue runtime retry and eventually move the poison message instead of
                 // acknowledging a failed item as successfully processed.
                 throw;
