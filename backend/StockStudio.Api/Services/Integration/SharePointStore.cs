@@ -437,13 +437,75 @@ public class SharePointStore
     }
 
     /// <summary>
+    /// Le altre consegne della stessa immagine: tutto cio' che sta nella sua stessa sottocartella.
+    ///
+    /// Il percorso durevole deposita ogni immagine come un insieme -- SVG, EPS e il JPEG -- dentro
+    /// una cartella che porta il suo nome. Solo il JPEG puo' essere classificato, perche' un
+    /// modello di visione non sa leggere delle curve: la descrizione quindi appartiene al gruppo e
+    /// non a un singolo file, e ogni azione deve trattare la cartella come unita'. Spostare o
+    /// inviare il solo JPEG lascerebbe i vettoriali orfani, senza metadati e senza via d'uscita --
+    /// ed e' proprio il vettoriale quello che si vende.
+    ///
+    /// Un file direttamente nella radice della libreria non fa parte di un insieme: e' cosi' che
+    /// arrivavano le immagini prima, e considerare la radice una cartella renderebbe ogni immagine
+    /// sorella di tutte le altre. Da qui il confronto esplicito con la radice: e' la differenza fra
+    /// un gruppo e l'intera libreria.
+    /// </summary>
+    public IReadOnlyList<SharePointItem> GetDeliverableSiblings(string listTitle, SharePointItem carrier)
+    {
+        var slash = carrier.ServerRelativeUrl.LastIndexOf('/');
+        if (slash <= 0) return Array.Empty<SharePointItem>();
+        var folder = carrier.ServerRelativeUrl[..slash];
+
+        using var ctx = CreateContext();
+        var list = ctx.Web.Lists.GetByTitle(listTitle);
+        ctx.Load(list, l => l.RootFolder.ServerRelativeUrl);
+        ctx.ExecuteQuery();
+
+        if (string.Equals(folder.TrimEnd('/'), list.RootFolder.ServerRelativeUrl.TrimEnd('/'),
+                          StringComparison.OrdinalIgnoreCase))
+            return Array.Empty<SharePointItem>();
+
+        var caml = "<View Scope='RecursiveAll'><Query><Where><Eq><FieldRef Name='FileDirRef'/>" +
+                   $"<Value Type='Text'>{System.Security.SecurityElement.Escape(folder)}</Value>" +
+                   "</Eq></Where></Query><RowLimit>50</RowLimit></View>";
+
+        var items = list.GetItems(new CamlQuery { ViewXml = caml });
+        ctx.Load(items);
+        ctx.ExecuteQuery();
+
+        return items
+            .Where(i => i.Id != carrier.Id)
+            .Where(i => !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
+            .Select(ToItem)
+            .ToList();
+    }
+
+    /// <summary>
     /// Moves a file between libraries, which is the manual hand-off the author used to do in
     /// SharePoint: reviewed items go from ImagesToClassify to ImagesToSend.
     /// </summary>
     public string MoveFile(string sourceServerRelativeUrl, string targetFolderServerRelativeUrl)
     {
         using var ctx = CreateContext();
-        var file = ctx.Web.GetFileByServerRelativeUrl(sourceServerRelativeUrl);
+        var web = ctx.Web;
+        ctx.Load(web, w => w.ServerRelativeUrl);
+        ctx.ExecuteQuery();
+
+        // Un gruppo di consegna si sposta in una sottocartella omonima, che nella libreria di
+        // destinazione ancora non esiste: senza crearla prima, MoveTo fallisce e basta.
+        //
+        // EnsureFolderPath vuole un percorso relativo al web, non server-relative: passandogli
+        // "/sites/Classifier/ImagesToSend/nome" proverebbe a creare quella gerarchia *dentro* il
+        // web e risponderebbe "Accesso negato" -- un messaggio che manda a cercare un problema di
+        // permessi che non c'e'.
+        var webRelative = targetFolderServerRelativeUrl;
+        if (webRelative.StartsWith(web.ServerRelativeUrl, StringComparison.OrdinalIgnoreCase))
+            webRelative = webRelative[web.ServerRelativeUrl.Length..];
+        webRelative = webRelative.Trim('/');
+        if (webRelative.Length > 0) web.EnsureFolderPath(webRelative);
+
+        var file = web.GetFileByServerRelativeUrl(sourceServerRelativeUrl);
         ctx.Load(file, f => f.Name);
         ctx.ExecuteQuery();
 

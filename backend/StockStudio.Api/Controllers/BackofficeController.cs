@@ -249,7 +249,19 @@ public class BackofficeController : ControllerBase
             }
 
             var updated = _sp.SetInvia(library, id, value);
-            return Ok(new { ok = true, item = Shape(updated) });
+
+            // I vettoriali non hanno mai potuto essere descritti: un modello di visione non legge
+            // delle curve, e infatti restavano con titolo e keyword vuoti. Ma sono proprio loro il
+            // prodotto che si vende, e UploadFileViaSFTP scrive nell'EXIF i valori dell'elemento
+            // che sta inviando: partirebbero muti, cioe' invendibili.
+            //
+            // La propagazione avviene qui, e non appena i metadati vengono generati, perche' questo
+            // e' l'ultimo istante in cui sono quelli definitivi: dopo la revisione dell'autore e
+            // prima che l'EXIF li fissi. Copiarli prima significherebbe propagare valori che
+            // l'autore stava per correggere.
+            var group = PropagateToGroup(library, updated, value);
+
+            return Ok(new { ok = true, item = Shape(updated), gruppo = group });
         }
         catch (Exception ex)
         {
@@ -257,7 +269,13 @@ public class BackofficeController : ControllerBase
         }
     }
 
-    /// <summary>Moves a reviewed file to the next stage — the hand-off previously done by hand.</summary>
+    /// <summary>
+    /// Moves a reviewed image to the next stage — the hand-off previously done by hand.
+    ///
+    /// L'unita' e' il gruppo di consegna, non il file: il JPEG che si rivede e i vettoriali che si
+    /// vendono viaggiano insieme. Spostare il solo JPEG li lascerebbe indietro in una cartella che
+    /// nessuno guarda piu', ed e' esattamente quello che succedeva.
+    /// </summary>
     [HttpPost("items/{id:int}/move")]
     public IActionResult Move(int id, [FromQuery] string library, [FromBody] MoveSpItemRequest req)
     {
@@ -268,14 +286,77 @@ public class BackofficeController : ControllerBase
 
         try
         {
-            var target = _sp.GetItem(library, id);
-            var moved = _sp.MoveFile(target.ServerRelativeUrl, $"{SiteRoot}/{req.targetLibrary}");
-            return Ok(new { ok = true, movedTo = moved });
+            var carrier = _sp.GetItem(library, id);
+            var siblings = _sp.GetDeliverableSiblings(library, carrier);
+
+            // Il gruppo mantiene la sua cartella anche a destinazione: appiattirlo nella radice
+            // farebbe perdere l'unico legame che tiene insieme le consegne di una stessa immagine.
+            var target = siblings.Count > 0
+                ? $"{SiteRoot}/{req.targetLibrary}/{FolderNameOf(carrier.ServerRelativeUrl)}"
+                : $"{SiteRoot}/{req.targetLibrary}";
+
+            var moved = _sp.MoveFile(carrier.ServerRelativeUrl, target);
+            var alsoMoved = new List<string>();
+            foreach (var s in siblings)
+            {
+                // Un fratello che non si sposta non deve far fallire lo spostamento gia' avvenuto:
+                // meglio riferire cosa e' rimasto indietro che lasciare il gruppo a meta' in silenzio.
+                try { alsoMoved.Add(_sp.MoveFile(s.ServerRelativeUrl, target)); }
+                catch (Exception ex) { _log.LogWarning(ex, "Consegna non spostata: {File}", s.FileName); }
+            }
+
+            return Ok(new
+            {
+                ok = true,
+                movedTo = moved,
+                gruppo = alsoMoved.Count + 1,
+                nonSpostate = siblings.Count - alsoMoved.Count,
+            });
         }
         catch (Exception ex)
         {
             return Ok(new { ok = false, error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Allinea le altre consegne dell'immagine al file appena marcato: stessi metadati, stesso
+    /// flag di invio. Restituisce quante ne ha allineate, incluso il portatore.
+    ///
+    /// Non solleva: il file principale e' gia' marcato e la sua partenza non deve dipendere dalla
+    /// riuscita di questa rifinitura. Un fallimento finisce nei log e nel conteggio, dove si vede.
+    /// </summary>
+    private int PropagateToGroup(string library, SharePointItem carrier, bool invia)
+    {
+        var aligned = 1;
+        foreach (var s in _sp.GetDeliverableSiblings(library, carrier))
+        {
+            // Gia' partito: riscriverne i metadati non raggiungerebbe piu' il marketplace, perche'
+            // l'EXIF e' stato fissato al momento dell'invio.
+            if (s.Inviato) continue;
+
+            try
+            {
+                if (invia) _sp.UpdateItem(library, s.Id, carrier.Title, carrier.Description, carrier.Tags);
+                _sp.SetInvia(library, s.Id, invia);
+                aligned++;
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Consegna non allineata: {File}", s.FileName);
+            }
+        }
+
+        if (aligned > 1)
+            _log.LogInformation("Gruppo di {Count} consegne allineato su {File}", aligned, carrier.FileName);
+        return aligned;
+    }
+
+    /// <summary>Nome della cartella che contiene il file, vuoto se sta nella radice.</summary>
+    private static string FolderNameOf(string serverRelativeUrl)
+    {
+        var parts = serverRelativeUrl.TrimEnd('/').Split('/');
+        return parts.Length >= 2 ? parts[^2] : "";
     }
 
     [HttpDelete("items/{id:int}")]

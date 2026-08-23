@@ -100,6 +100,19 @@ namespace MJ.Classifier
                 }
 
                 log.LogInformation($"Get image to resize: blobPath {message.PathBlob}");
+
+                // Stessa immagine, due strade: la vettorializzazione accoda subito, il poller di
+                // SharePoint ripassa quindici minuti dopo e riaccoda lo stesso file. Senza questo
+                // controllo la seconda volta si paga un'altra chiamata al modello per riscrivere
+                // metadati gia' buoni -- e se nel frattempo l'autore li avesse corretti a mano, li
+                // cancellerebbe. Vale anche per i ritentativi della coda.
+                var state = SharePointHelper.TryReadMetadataState(
+                    _sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
+                if (state.Ok && state.HasMetadata)
+                {
+                    log.LogInformation($"{name}: gia' descritta, non la riclassifico.");
+                    return;
+                }
                 using var memoryStream = SharePointHelper.GetFileFromSharePoint(_sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
                 log.LogInformation($"Image found");
 

@@ -46,6 +46,50 @@ namespace MJ.Classifier.Helpers
             return outputStream;
         }
 
+        /// <summary>
+        /// Legge titolo e descrizione dell'elemento, per capire se e' gia' stato descritto.
+        ///
+        /// Serve a non pagare due volte la stessa classificazione: la stessa immagine puo' arrivare
+        /// in coda piu' di una volta -- una dalla vettorializzazione, che accoda subito, e una dal
+        /// poller di SharePoint quindici minuti dopo -- e ogni passaggio in piu' e' una chiamata al
+        /// modello che riscrive metadati gia' buoni, magari gia' corretti a mano.
+        ///
+        /// Non solleva: se la lettura non riesce, chi chiama deve poter proseguire come prima.
+        /// Meglio una classificazione di troppo che un'immagine che non ne riceve nessuna.
+        /// </summary>
+        public static (bool Ok, bool HasMetadata) TryReadMetadataState(
+            SharePointSettings sharePointSettings, string serverRelativeUrl, string functionDirectory, ILogger log)
+        {
+            try
+            {
+                var certificatePath = Path.GetFullPath(Path.Combine(functionDirectory, sharePointSettings.CertificatePath));
+                var authManager = new AuthenticationManager(sharePointSettings.ClientId, certificatePath, string.Empty, sharePointSettings.Tenant);
+                using var clientContext = authManager.GetContext(sharePointSettings.SiteUrl);
+
+                var web = clientContext.Web;
+                clientContext.Load(web);
+                clientContext.ExecuteQuery();
+
+                var url = serverRelativeUrl.StartsWith(web.ServerRelativeUrl)
+                    ? serverRelativeUrl
+                    : $"{web.ServerRelativeUrl}{serverRelativeUrl}";
+
+                var item = web.GetFileByServerRelativeUrl(url).ListItemAllFields;
+                clientContext.Load(item);
+                clientContext.ExecuteQuery();
+
+                var title = item.FieldValues.TryGetValue("Title", out var t) ? t?.ToString() : null;
+                var description = item.FieldValues.TryGetValue("_ExtendedDescription", out var d) ? d?.ToString() : null;
+
+                return (true, !string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(description));
+            }
+            catch (System.Exception ex)
+            {
+                log.LogWarning(ex, $"Stato dei metadati non leggibile per {serverRelativeUrl}: procedo comunque.");
+                return (false, false);
+            }
+        }
+
         public static void UploadFileToSharePoint(SharePointSettings sharePointSettings, MemoryStream memoryStream, string fileName, string folderUrl, string functionDirectory, ILogger log)
         {
             UploadFileToSharePointWithId(sharePointSettings, memoryStream, fileName, folderUrl, functionDirectory, log);
