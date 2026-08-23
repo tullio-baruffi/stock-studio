@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Stock Vector Studio si è spostato</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Questi due indirizzi ospitavano il frontend quando viveva separato dall'API. Ora la SPA e'
+    servita dall'API stessa, perche' l'autenticazione di App Service protegge una sola origine con
+    un solo cookie; da qui non si potrebbe piu' raggiungere l'API nemmeno volendo.
+
+    Un rimando invece della cancellazione: chi ha un segnalibro non trova una pagina rotta ne' una
+    schermata che chiede una chiave API che non esiste piu'.
+  -->
+  <meta http-equiv="refresh" content="3; url=https://stock-vector-studio-api.azurewebsites.net/" />
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #0f1115; color: #e6e9ef;
+      font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 460px; padding: 32px; text-align: center; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    p { color: #9aa3b2; margin: 0 0 20px; }
+    a {
+      display: inline-block; padding: 10px 18px; border-radius: 10px;
+      background: #4f8cff; color: #fff; text-decoration: none; font-weight: 600;
+    }
+    code { color: #9aa3b2; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>▲ Stock Vector Studio si è spostato</h1>
+    <p>
+      L'applicazione ora vive insieme alla sua API, su un indirizzo solo, e si apre
+      con l'account aziendale. Ti porto lì fra pochi istanti.
+    </p>
+    <p><a href="https://stock-vector-studio-api.azurewebsites.net/">Vai all'applicazione</a></p>
+    <p><code>stock-vector-studio-api.azurewebsites.net</code></p>
+  </main>
+</body>
+</html>
