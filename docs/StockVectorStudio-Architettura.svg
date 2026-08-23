@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1240" viewBox="0 0 1800 1240">
+  <defs>
+    <style>
+      .title{font:700 34px "Segoe UI",Arial,sans-serif;fill:#0f172a}
+      .subtitle{font:400 16px "Segoe UI",Arial,sans-serif;fill:#475569}
+      .lane-title{font:700 17px "Segoe UI",Arial,sans-serif;fill:#334155;letter-spacing:1px}
+      .head{font:700 16px "Segoe UI",Arial,sans-serif;fill:#fff}
+      .body{font:600 14px "Segoe UI",Arial,sans-serif;fill:#0f172a}
+      .small{font:400 12px "Segoe UI",Arial,sans-serif;fill:#334155}
+      .tiny{font:400 11px "Segoe UI",Arial,sans-serif;fill:#475569}
+      .flow-label{font:600 11px "Segoe UI",Arial,sans-serif;fill:#475569}
+      .box{stroke-width:2;rx:12;ry:12}
+      .shadow{filter:drop-shadow(0 4px 6px rgba(15,23,42,.12))}
+      .arrow-blue{stroke:#2563eb;fill:none;stroke-width:2.6;marker-end:url(#blue)}
+      .arrow-orange{stroke:#d97706;fill:none;stroke-width:2.6;marker-end:url(#orange)}
+      .arrow-green{stroke:#059669;fill:none;stroke-width:2.6;marker-end:url(#green)}
+      .pill{font:600 11px "Segoe UI",Arial,sans-serif;fill:#fff}
+    </style>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+    </marker>
+    <marker id="orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#d97706"/>
+    </marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1240" fill="#f8fafc"/>
+  <text x="55" y="52" class="title">Stock Vector Studio — Architettura della soluzione</text>
+  <text x="55" y="82" class="subtitle">Flussi separati per pianificazione, produzione locale e pubblicazione Azure</text>
+
+  <!-- Legend -->
+  <g transform="translate(1190,25)">
+    <rect width="555" height="66" rx="12" fill="#fff" stroke="#cbd5e1"/>
+    <circle cx="25" cy="23" r="7" fill="#2563eb"/><text x="40" y="27" class="tiny">applicativo</text>
+    <circle cx="140" cy="23" r="7" fill="#059669"/><text x="155" y="27" class="tiny">dati misurati</text>
+    <circle cx="285" cy="23" r="7" fill="#7c3aed"/><text x="300" y="27" class="tiny">AI generativa</text>
+    <circle cx="425" cy="23" r="7" fill="#d97706"/><text x="440" y="27" class="tiny">pipeline Azure</text>
+    <circle cx="25" cy="48" r="7" fill="#64748b"/><text x="40" y="52" class="tiny">persistenza / sicurezza</text>
+  </g>
+
+  <!-- ============================================================= -->
+  <!-- LANE 1: INTELLIGENCE -->
+  <!-- ============================================================= -->
+  <rect x="35" y="115" width="1730" height="285" rx="18" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="60" y="145" class="lane-title">1 · PIANIFICAZIONE E INTELLIGENCE</text>
+
+  <!-- All boxes share y=195; arrows occupy only 40px gutters -->
+  <g class="shadow">
+    <rect x="70" y="195" width="250" height="145" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="70" y="195" width="250" height="34" rx="10" fill="#2563eb"/>
+    <text x="90" y="218" class="head">Browser · React SPA</text>
+    <text x="90" y="258" class="body">Opportunità</text>
+    <text x="90" y="282" class="small">Cosa creare · Trend attuali</text>
+    <text x="90" y="304" class="small">Previsti · Stagionali</text>
+    <text x="90" y="326" class="tiny">Guida e configurazione</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="370" y="180" width="350" height="175" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="370" y="180" width="350" height="34" rx="10" fill="#2563eb"/>
+    <text x="390" y="203" class="head">API Trend &amp; Stock Intelligence</text>
+    <text x="390" y="243" class="body">ThemeOpportunityService</text>
+    <text x="390" y="267" class="body">LiveTrendService · NewsTrendClient</text>
+    <text x="390" y="294" class="small">vendibilità · punteggio · traiettoria 15 gg</text>
+    <text x="390" y="317" class="small">fallback deterministico</text>
+    <text x="390" y="339" class="tiny">cache Wikipedia + cache agente su disco</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="770" y="195" width="280" height="145" class="box" fill="#fff" stroke="#059669"/>
+    <rect x="770" y="195" width="280" height="34" rx="10" fill="#059669"/>
+    <text x="790" y="218" class="head">Fonti pubbliche reali</text>
+    <text x="790" y="258" class="body">Google Trends RSS</text>
+    <text x="790" y="282" class="body">Google News RSS</text>
+    <text x="790" y="306" class="body">Wikipedia Pageviews</text>
+    <text x="790" y="328" class="tiny">domanda · picchi · momentum</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1100" y="195" width="280" height="145" class="box" fill="#fff" stroke="#7c3aed"/>
+    <rect x="1100" y="195" width="280" height="34" rx="10" fill="#7c3aed"/>
+    <text x="1120" y="218" class="head">Agente AI opzionale</text>
+    <text x="1120" y="258" class="body">Azure OpenAI · OpenAI</text>
+    <text x="1120" y="282" class="body">Ollama · LM Studio · vLLM</text>
+    <text x="1120" y="308" class="small">tool calling sulle fonti reali</text>
+    <text x="1120" y="329" class="tiny">cache configurabile, default 12h</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1430" y="195" width="280" height="145" class="box" fill="#fff" stroke="#64748b"/>
+    <rect x="1430" y="195" width="280" height="34" rx="10" fill="#64748b"/>
+    <text x="1450" y="218" class="head">Risultato verificato</text>
+    <text x="1450" y="258" class="body">Temi e prompt proposti</text>
+    <text x="1450" y="282" class="body">Numeri riletti dalla fonte</text>
+    <text x="1450" y="306" class="small">score · timing · concetti</text>
+    <text x="1450" y="328" class="tiny">nessuna cifra inventata dal modello</text>
+  </g>
+
+  <!-- Gutters only: no connector enters any box -->
+  <path d="M320 267 H370" class="arrow-blue"/>
+  <path d="M720 245 H770" class="arrow-green"/>
+  <path d="M1050 290 H1100" class="arrow-green"/>
+  <path d="M1380 267 H1430" class="arrow-blue"/>
+  <text x="326" y="257" class="flow-label">REST</text>
+  <text x="726" y="235" class="flow-label">misura</text>
+  <text x="1056" y="280" class="flow-label">tool</text>
+  <text x="1386" y="257" class="flow-label">verifica</text>
+
+  <!-- ============================================================= -->
+  <!-- LANE 2: LOCAL PROCESSING -->
+  <!-- ============================================================= -->
+  <rect x="35" y="420" width="1730" height="345" rx="18" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="60" y="450" class="lane-title">2 · PRODUZIONE ED ELABORAZIONE NELL'APPLICATIVO</text>
+
+  <g class="shadow">
+    <rect x="70" y="510" width="250" height="160" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="70" y="510" width="250" height="34" rx="10" fill="#2563eb"/>
+    <text x="90" y="533" class="head">1. Caricamento</text>
+    <text x="90" y="574" class="body">JPEG · PNG · WEBP · TIFF</text>
+    <text x="90" y="600" class="small">modalità vettoriale o immagine</text>
+    <text x="90" y="624" class="small">uno o più file per job</text>
+    <text x="90" y="650" class="tiny">POST /api/jobs</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="370" y="495" width="300" height="190" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="370" y="495" width="300" height="34" rx="10" fill="#2563eb"/>
+    <text x="390" y="518" class="head">2. Orchestrazione job</text>
+    <text x="390" y="559" class="body">JobQueue + BackgroundService</text>
+    <text x="390" y="583" class="body">PipelineService</text>
+    <text x="390" y="610" class="small">recovery · retry · revectorize</text>
+    <text x="390" y="634" class="small">queued → processing → completed</text>
+    <text x="390" y="660" class="tiny">persistenza a ogni cambio stato</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="720" y="495" width="310" height="190" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="720" y="495" width="310" height="34" rx="10" fill="#2563eb"/>
+    <text x="740" y="518" class="head">3. Motore di elaborazione</text>
+    <text x="740" y="559" class="body">Otsu + potrace</text>
+    <text x="740" y="583" class="body">oppure Illustrator COM + JSX</text>
+    <text x="740" y="610" class="small">SVG · EPS · JPG · AI opzionale</text>
+    <text x="740" y="634" class="small">raster: solo normalizzazione JPEG</text>
+    <text x="740" y="660" class="tiny">soglia regolabile e rigenerazione</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1080" y="495" width="300" height="190" class="box" fill="#fff" stroke="#2563eb"/>
+    <rect x="1080" y="495" width="300" height="34" rx="10" fill="#2563eb"/>
+    <text x="1100" y="518" class="head">4. Metadati e qualità</text>
+    <text x="1100" y="559" class="body">Stub o AI locale opzionale</text>
+    <text x="1100" y="583" class="body">StockValidator 0–100</text>
+    <text x="1100" y="610" class="small">marchi · limiti · duplicati</text>
+    <text x="1100" y="634" class="small">blocchi prima del dispatch</text>
+    <text x="1100" y="660" class="tiny">metadati definitivi dalla Logic App</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1430" y="510" width="280" height="160" class="box" fill="#fff" stroke="#64748b"/>
+    <rect x="1430" y="510" width="280" height="34" rx="10" fill="#64748b"/>
+    <text x="1450" y="533" class="head">5. Output e persistenza</text>
+    <text x="1450" y="574" class="body">CSV Adobe · CSV Freepik</text>
+    <text x="1450" y="598" class="body">Bundle ZIP · singoli file</text>
+    <text x="1450" y="624" class="small">Azure Table / Azurite</text>
+    <text x="1450" y="648" class="tiny">Storage/ su disco per gli artefatti</text>
+  </g>
+
+  <path d="M320 590 H370" class="arrow-blue"/>
+  <path d="M670 590 H720" class="arrow-blue"/>
+  <path d="M1030 590 H1080" class="arrow-blue"/>
+  <path d="M1380 590 H1430" class="arrow-blue"/>
+  <text x="328" y="580" class="flow-label">crea</text>
+  <text x="678" y="580" class="flow-label">processa</text>
+  <text x="1036" y="580" class="flow-label">valida</text>
+  <text x="1386" y="580" class="flow-label">salva</text>
+
+  <!-- Security bar: isolated, no crossing lines -->
+  <rect x="370" y="705" width="1010" height="38" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="395" y="729" class="small">Sicurezza: API key opzionale · CORS · User Secrets / variabili ambiente / Key Vault · download autenticati via header</text>
+
+  <!-- ============================================================= -->
+  <!-- LANE 3: AZURE PIPELINE -->
+  <!-- ============================================================= -->
+  <rect x="35" y="785" width="1730" height="385" rx="18" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="60" y="815" class="lane-title">3 · CONSEGNA E PUBBLICAZIONE AZURE</text>
+
+  <!-- Main forward flow: six aligned boxes, arrows only in gutters -->
+  <g class="shadow">
+    <rect x="60" y="865" width="230" height="155" class="box" fill="#fff" stroke="#d97706"/>
+    <rect x="60" y="865" width="230" height="34" rx="10" fill="#d97706"/>
+    <text x="80" y="888" class="head">1. Dispatcher</text>
+    <text x="80" y="928" class="body">controllo qualità</text>
+    <text x="80" y="952" class="body">nomi file univoci</text>
+    <text x="80" y="978" class="small">upload deliverable</text>
+    <text x="80" y="1000" class="tiny">certificato PnP</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="330" y="865" width="230" height="155" class="box" fill="#fff" stroke="#d97706"/>
+    <rect x="330" y="865" width="230" height="34" rx="10" fill="#d97706"/>
+    <text x="350" y="888" class="head">2. SharePoint</text>
+    <text x="350" y="928" class="body">ImagesToClassify</text>
+    <text x="350" y="952" class="small">originale + deliverable</text>
+    <text x="350" y="976" class="small">back-office di ingresso</text>
+    <text x="350" y="1000" class="tiny">item ID + URL server-relative</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="600" y="865" width="230" height="155" class="box" fill="#fff" stroke="#d97706"/>
+    <rect x="600" y="865" width="230" height="34" rx="10" fill="#d97706"/>
+    <text x="620" y="888" class="head">3. Queue + Function 1</text>
+    <text x="620" y="928" class="body">image-to-classify</text>
+    <text x="620" y="952" class="body">ResizeImageToClassify</text>
+    <text x="620" y="976" class="small">blob shrinked-images</text>
+    <text x="620" y="1000" class="tiny">retry idempotente + poison queue</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="870" y="865" width="230" height="155" class="box" fill="#fff" stroke="#7c3aed"/>
+    <rect x="870" y="865" width="230" height="34" rx="10" fill="#7c3aed"/>
+    <text x="890" y="888" class="head">4. Logic App AI</text>
+    <text x="890" y="928" class="body">classificazione vision</text>
+    <text x="890" y="952" class="body">titolo · descrizione</text>
+    <text x="890" y="976" class="body">keyword definitive</text>
+    <text x="890" y="1000" class="tiny">queue images-to-send</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1140" y="865" width="230" height="155" class="box" fill="#fff" stroke="#d97706"/>
+    <rect x="1140" y="865" width="230" height="34" rx="10" fill="#d97706"/>
+    <text x="1160" y="888" class="head">5. Function 2</text>
+    <text x="1160" y="928" class="body">UploadFileViaSFTP</text>
+    <text x="1160" y="952" class="body">scrittura EXIF</text>
+    <text x="1160" y="976" class="small">FTP · SFTP · WinSCP</text>
+    <text x="1160" y="1000" class="tiny">callback firmata</text>
+  </g>
+
+  <g class="shadow">
+    <rect x="1410" y="865" width="330" height="155" class="box" fill="#fff" stroke="#d97706"/>
+    <rect x="1410" y="865" width="330" height="34" rx="10" fill="#d97706"/>
+    <text x="1430" y="888" class="head">6. Destinazioni</text>
+    <text x="1430" y="928" class="body">Adobe Stock · Freepik</text>
+    <text x="1430" y="952" class="small">altre destinazioni FTP configurate</text>
+    <text x="1430" y="976" class="body">SharePoint: ImagesToSend / ImagesSent</text>
+    <text x="1430" y="1000" class="tiny">archivio e stato della pubblicazione</text>
+  </g>
+
+  <path d="M290 942 H330" class="arrow-orange"/>
+  <path d="M560 942 H600" class="arrow-orange"/>
+  <path d="M830 942 H870" class="arrow-orange"/>
+  <path d="M1100 942 H1140" class="arrow-orange"/>
+  <path d="M1370 942 H1410" class="arrow-orange"/>
+
+  <!-- Callback represented as a separate event card, not a crossing return line -->
+  <rect x="460" y="1060" width="880" height="72" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <rect x="480" y="1076" width="165" height="38" rx="19" fill="#2563eb"/>
+  <text x="505" y="1100" class="pill">EVENTO DI RITORNO</text>
+  <text x="680" y="1087" class="body">POST /api/pipeline/callback</text>
+  <text x="680" y="1112" class="small">Function 2 → dashboard: published / publish_failed + metadati definitivi · X-Callback-Secret</text>
+
+  <text x="55" y="1205" class="tiny">Il flusso principale procede sempre da sinistra a destra. Le linee occupano esclusivamente gli spazi fra i riquadri.</text>
+</svg>

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1840" height="1809" viewBox="0 0 1840 1809" font-family="Segoe UI, Selawik, Arial, sans-serif">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#16232e"/></marker></defs>
+<rect width="1840" height="1809" fill="#ffffff"/>
+<text x="40" y="58" font-size="30" font-weight="700" fill="#16232e">Stock Vector Studio - mappa del funzionamento</text>
+<text x="40" y="88" font-size="15" fill="#5a6b7a">Dal JPEG generato con Flow alla pubblicazione su Adobe Stock e Freepik, con le risorse usate in ogni blocco.</text>
+<text x="40" y="110" font-size="13" fill="#5a6b7a">Stato verificato il 22 agosto 2026. Le risorse non tracciate nel repository sono segnate con bordo tratteggiato rosso.</text>
+<rect x="40" y="132" width="1760" height="231" rx="14" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<circle cx="74" cy="166" r="17" fill="#16232e"/>
+<text x="74" y="172" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="102" y="165" font-size="20" font-weight="700" fill="#16232e">Creazione e caricamento</text>
+<text x="102" y="183" font-size="13" fill="#5a6b7a">Sulla tua macchina, nel browser</text>
+<rect x="307.0" y="194" width="604" height="131" rx="10" fill="#fdf0e3" stroke="#c77700" stroke-width="2"/>
+<rect x="307.0" y="194" width="5" height="131" rx="2.5" fill="#c77700"/>
+<text x="321.0" y="223" font-size="16" font-weight="700" fill="#7a4a00">Flow (Google)</text>
+<rect x="321.0" y="233" width="79" height="17" rx="8.5" fill="#7b2ff7"/>
+<text x="329.0" y="245.5" font-size="11" font-weight="700" fill="#ffffff">generativo</text>
+<text x="321.0" y="270" font-size="12.5" fill="#5a6b7a">- Genera l&#x27;immagine di partenza</text>
+<text x="321.0" y="290" font-size="12.5" fill="#5a6b7a">- Esporta un JPEG</text>
+<text x="321.0" y="310" font-size="12.5" fill="#5a6b7a">- Fuori dall&#x27;applicativo: passaggio manuale</text>
+<rect x="929.0" y="194" width="604" height="151" rx="10" fill="#e8f2fe" stroke="#1b6ec2" stroke-width="2"/>
+<rect x="929.0" y="194" width="5" height="151" rx="2.5" fill="#1b6ec2"/>
+<text x="943.0" y="223" font-size="16" font-weight="700" fill="#0d3b66">Interfaccia web</text>
+<rect x="943.0" y="233" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="951.0" y="245.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="943.0" y="270" font-size="12.5" fill="#5a6b7a">- React 18 + TypeScript + Vite</text>
+<text x="943.0" y="290" font-size="12.5" fill="#5a6b7a">- http://127.0.0.1:5173</text>
+<text x="943.0" y="310" font-size="12.5" fill="#5a6b7a">- Caricamento file, scelta modalità vettoriale o raster</text>
+<text x="943.0" y="330" font-size="12.5" fill="#5a6b7a">- Pagine: Studio, Trend, Configurazione, Guida</text>
+<rect x="40" y="455" width="1760" height="251" rx="14" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<circle cx="74" cy="489" r="17" fill="#16232e"/>
+<text x="74" y="495" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="102" y="488" font-size="20" font-weight="700" fill="#16232e">Elaborazione locale</text>
+<text x="102" y="506" font-size="13" fill="#5a6b7a">StockStudio.Api - ASP.NET Core .NET 8 - http://127.0.0.1:5080</text>
+<rect x="58.0" y="517" width="562.6666666666666" height="171" rx="10" fill="#e8f2fe" stroke="#1b6ec2" stroke-width="2"/>
+<rect x="58.0" y="517" width="5" height="171" rx="2.5" fill="#1b6ec2"/>
+<text x="72.0" y="546" font-size="16" font-weight="700" fill="#0d3b66">Vettorializzazione</text>
+<rect x="72.0" y="556" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="80.0" y="568.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="72.0" y="593" font-size="12.5" fill="#5a6b7a">- potrace: tools/potrace/potrace.exe (predefinito)</text>
+<text x="72.0" y="613" font-size="12.5" fill="#5a6b7a">- oppure Adobe Illustrator via COM + JSX</text>
+<text x="72.0" y="633" font-size="12.5" fill="#5a6b7a">- Ingrandimento 200%, B&amp;N Silhouette Auto Group</text>
+<text x="72.0" y="653" font-size="12.5" fill="#5a6b7a">- Soglia automatica Otsu, timeout 180s</text>
+<text x="72.0" y="673" font-size="12.5" fill="#5a6b7a">- Produce SVG, EPS e JPG con lo stesso nome</text>
+<rect x="638.6666666666666" y="517" width="562.6666666666666" height="171" rx="10" fill="#e8f2fe" stroke="#1b6ec2" stroke-width="2"/>
+<rect x="638.6666666666666" y="517" width="5" height="171" rx="2.5" fill="#1b6ec2"/>
+<text x="652.6666666666666" y="546" font-size="16" font-weight="700" fill="#0d3b66">Metadati e agente AI</text>
+<rect x="652.6666666666666" y="556" width="79" height="17" rx="8.5" fill="#7b2ff7"/>
+<text x="660.6666666666666" y="568.5" font-size="11" font-weight="700" fill="#ffffff">generativo</text>
+<text x="652.6666666666666" y="593" font-size="12.5" fill="#5a6b7a">- OpenAI gpt-4o-mini (Ai:Provider = openai)</text>
+<text x="652.6666666666666" y="613" font-size="12.5" fill="#5a6b7a">- Vision: guarda l&#x27;immagine e scrive titolo e keyword</text>
+<text x="652.6666666666666" y="633" font-size="12.5" fill="#5a6b7a">- Immagine ridotta a 1024px, max 40 keyword, temp 0,4</text>
+<text x="652.6666666666666" y="653" font-size="12.5" fill="#5a6b7a">- Agente opportunità con strumenti reali</text>
+<text x="652.6666666666666" y="673" font-size="12.5" fill="#5a6b7a">- Cache risposte 12 ore</text>
+<rect x="1219.3333333333333" y="517" width="562.6666666666666" height="151" rx="10" fill="#f0ecfb" stroke="#5b3fa8" stroke-width="2"/>
+<rect x="1219.3333333333333" y="517" width="5" height="151" rx="2.5" fill="#5b3fa8"/>
+<text x="1233.3333333333333" y="546" font-size="16" font-weight="700" fill="#33236b">Dati e file</text>
+<rect x="1233.3333333333333" y="556" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="1241.3333333333333" y="568.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="1233.3333333333333" y="593" font-size="12.5" fill="#5a6b7a">- Azurite Table stockstudiojobs (porta 10002)</text>
+<text x="1233.3333333333333" y="613" font-size="12.5" fill="#5a6b7a">- Cartella Storage/ su disco per i deliverable</text>
+<text x="1233.3333333333333" y="633" font-size="12.5" fill="#5a6b7a">- CSV Adobe Stock e Freepik</text>
+<text x="1233.3333333333333" y="653" font-size="12.5" fill="#5a6b7a">- Formule neutralizzate contro CSV injection</text>
+<rect x="40" y="798" width="1760" height="231" rx="14" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<circle cx="74" cy="832" r="17" fill="#16232e"/>
+<text x="74" y="838" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="102" y="831" font-size="20" font-weight="700" fill="#16232e">Consegna alla pipeline</text>
+<text x="102" y="849" font-size="13" fill="#5a6b7a">Punto di giunzione fra il nuovo sito e il vecchio impianto</text>
+<rect x="307.0" y="860" width="604" height="151" rx="10" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<rect x="307.0" y="860" width="5" height="151" rx="2.5" fill="#2e7d32"/>
+<text x="321.0" y="889" font-size="16" font-weight="700" fill="#1b4d20">QueueDispatcher</text>
+<rect x="321.0" y="899" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="329.0" y="911.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="321.0" y="936" font-size="12.5" fill="#5a6b7a">- Accoda un ResizeQueueMessage</text>
+<text x="321.0" y="956" font-size="12.5" fill="#5a6b7a">- Coda image-to-classify</text>
+<text x="321.0" y="976" font-size="12.5" fill="#5a6b7a">- Contratto condiviso: StockStudio.Shared</text>
+<text x="321.0" y="996" font-size="12.5" fill="#5a6b7a">- In locale punta ad Azurite: le code non esistono, è un no-op</text>
+<rect x="929.0" y="860" width="604" height="151" rx="10" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<rect x="929.0" y="860" width="5" height="151" rx="2.5" fill="#2e7d32"/>
+<text x="943.0" y="889" font-size="16" font-weight="700" fill="#1b4d20">SharePoint (back-office)</text>
+<rect x="943.0" y="899" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="951.0" y="911.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="943.0" y="936" font-size="12.5" fill="#5a6b7a">- cosdh.sharepoint.com/sites/Classifier</text>
+<text x="943.0" y="956" font-size="12.5" fill="#5a6b7a">- Librerie ImagesToClassify, ImagesToSend, ImagesSent</text>
+<text x="943.0" y="976" font-size="12.5" fill="#5a6b7a">- Autenticazione PnP con certificato pnp.pfx</text>
+<text x="943.0" y="996" font-size="12.5" fill="#5a6b7a">- Usato per imbuto di avanzamento e controllo duplicati</text>
+<rect x="40" y="1121" width="1760" height="231" rx="14" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<circle cx="74" cy="1155" r="17" fill="#16232e"/>
+<text x="74" y="1161" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="102" y="1154" font-size="20" font-weight="700" fill="#16232e">Pipeline Azure esistente</text>
+<text x="102" y="1172" font-size="13" fill="#5a6b7a">Progetto resize-image (.NET 6 Windows) più Logic App non presenti nel repository</text>
+<rect x="58.0" y="1183" width="545.3333333333334" height="151" rx="10" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<rect x="58.0" y="1183" width="5" height="151" rx="2.5" fill="#2e7d32"/>
+<text x="72.0" y="1212" font-size="16" font-weight="700" fill="#1b4d20">Function ResizeImageToClassify</text>
+<rect x="72.0" y="1222" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="80.0" y="1234.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="72.0" y="1259" font-size="12.5" fill="#5a6b7a">- Trigger: coda image-to-classify</text>
+<text x="72.0" y="1279" font-size="12.5" fill="#5a6b7a">- Legge il file da SharePoint</text>
+<text x="72.0" y="1299" font-size="12.5" fill="#5a6b7a">- Scrive nel blob shrinked-images</text>
+<text x="72.0" y="1319" font-size="12.5" fill="#5a6b7a">- Accoda shrinked-image-to-classify</text>
+<rect x="647.3333333333334" y="1183" width="545.3333333333334" height="151" rx="10" fill="#fdeaea" stroke="#c62828" stroke-width="2" stroke-dasharray="7 5"/>
+<rect x="647.3333333333334" y="1183" width="5" height="151" rx="2.5" fill="#c62828"/>
+<text x="661.3333333333334" y="1212" font-size="16" font-weight="700" fill="#7f1d1d">Logic App di classificazione</text>
+<rect x="661.3333333333334" y="1222" width="79" height="17" rx="8.5" fill="#7b2ff7"/>
+<text x="669.3333333333334" y="1234.5" font-size="11" font-weight="700" fill="#ffffff">generativo</text>
+<text x="661.3333333333334" y="1259" font-size="12.5" fill="#5a6b7a">- NON presente nel repository</text>
+<text x="661.3333333333334" y="1279" font-size="12.5" fill="#5a6b7a">- Dedotta: nessun componente locale legge quella coda</text>
+<text x="661.3333333333334" y="1299" font-size="12.5" fill="#5a6b7a">- Produce titolo, descrizione e tag definitivi</text>
+<text x="661.3333333333334" y="1319" font-size="12.5" fill="#5a6b7a">- Accoda images-to-send</text>
+<rect x="1236.6666666666667" y="1183" width="545.3333333333334" height="151" rx="10" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<rect x="1236.6666666666667" y="1183" width="5" height="151" rx="2.5" fill="#2e7d32"/>
+<text x="1250.6666666666667" y="1212" font-size="16" font-weight="700" fill="#1b4d20">Function UploadFileViaSFTP</text>
+<rect x="1250.6666666666667" y="1222" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="1258.6666666666667" y="1234.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="1250.6666666666667" y="1259" font-size="12.5" fill="#5a6b7a">- Trigger: coda images-to-send</text>
+<text x="1250.6666666666667" y="1279" font-size="12.5" fill="#5a6b7a">- Scrive i metadati EXIF con exiftool</text>
+<text x="1250.6666666666667" y="1299" font-size="12.5" fill="#5a6b7a">- Carica sui marketplace</text>
+<text x="1250.6666666666667" y="1319" font-size="12.5" fill="#5a6b7a">- Notifica la Logic App e richiama il sito</text>
+<line x1="608.3333333333334" y1="1258.5" x2="638.3333333333334" y2="1258.5" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<line x1="1197.6666666666667" y1="1258.5" x2="1227.6666666666667" y2="1258.5" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="40" y="1444" width="1760" height="231" rx="14" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<circle cx="74" cy="1478" r="17" fill="#16232e"/>
+<text x="74" y="1484" font-size="17" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<text x="102" y="1477" font-size="20" font-weight="700" fill="#16232e">Pubblicazione e ritorno</text>
+<text x="102" y="1495" font-size="13" fill="#5a6b7a">Marketplace, spostamento file e aggiornamento della dashboard</text>
+<rect x="58.0" y="1506" width="562.6666666666666" height="151" rx="10" fill="#fdf0e3" stroke="#c77700" stroke-width="2"/>
+<rect x="58.0" y="1506" width="5" height="151" rx="2.5" fill="#c77700"/>
+<text x="72.0" y="1535" font-size="16" font-weight="700" fill="#7a4a00">Marketplace</text>
+<rect x="72.0" y="1545" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="80.0" y="1557.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="72.0" y="1582" font-size="12.5" fill="#5a6b7a">- SFTP Adobe Stock - porta 22</text>
+<text x="72.0" y="1602" font-size="12.5" fill="#5a6b7a">- SFTP Freepik - porta 60022</text>
+<text x="72.0" y="1622" font-size="12.5" fill="#5a6b7a">- FTP YayImages - porta 21</text>
+<text x="72.0" y="1642" font-size="12.5" fill="#5a6b7a">- FTP DreamsTime - porta 21</text>
+<rect x="638.6666666666666" y="1506" width="562.6666666666666" height="151" rx="10" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<rect x="638.6666666666666" y="1506" width="5" height="151" rx="2.5" fill="#2e7d32"/>
+<text x="652.6666666666666" y="1535" font-size="16" font-weight="700" fill="#1b4d20">Logic App di spostamento</text>
+<rect x="652.6666666666666" y="1545" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="660.6666666666666" y="1557.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="652.6666666666666" y="1582" font-size="12.5" fill="#5a6b7a">- Workflow 69a3684f...d228 (West Europe)</text>
+<text x="652.6666666666666" y="1602" font-size="12.5" fill="#5a6b7a">- Unica Logic App tracciata nel repository</text>
+<text x="652.6666666666666" y="1622" font-size="12.5" fill="#5a6b7a">- Sposta il file nella libreria ImagesSent</text>
+<text x="652.6666666666666" y="1642" font-size="12.5" fill="#5a6b7a">- Attenzione: l&#x27;URL contiene una firma SAS</text>
+<rect x="1219.3333333333333" y="1506" width="562.6666666666666" height="151" rx="10" fill="#e8f2fe" stroke="#1b6ec2" stroke-width="2"/>
+<rect x="1219.3333333333333" y="1506" width="5" height="151" rx="2.5" fill="#1b6ec2"/>
+<text x="1233.3333333333333" y="1535" font-size="16" font-weight="700" fill="#0d3b66">Ritorno alla dashboard</text>
+<rect x="1233.3333333333333" y="1545" width="105" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="1241.3333333333333" y="1557.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="1233.3333333333333" y="1582" font-size="12.5" fill="#5a6b7a">- Callback firmato con header X-Callback-Secret</text>
+<text x="1233.3333333333333" y="1602" font-size="12.5" fill="#5a6b7a">- POST /api/pipeline/callback</text>
+<text x="1233.3333333333333" y="1622" font-size="12.5" fill="#5a6b7a">- Aggiorna lo stato del job nella tabella</text>
+<text x="1233.3333333333333" y="1642" font-size="12.5" fill="#5a6b7a">- Il job compare come pubblicato nell&#x27;interfaccia</text>
+<line x1="920.0" y1="361" x2="920.0" y2="378.0" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="771" y="387" width="298" height="44" rx="22" fill="#ffffff" stroke="#16232e" stroke-width="2"/>
+<text x="920.0" y="406.0" font-size="14" font-weight="700" fill="#16232e" text-anchor="middle">POST /api/jobs</text>
+<text x="920.0" y="422.0" font-size="11.5" fill="#5a6b7a" text-anchor="middle">Il browser invia il file al backend locale</text>
+<line x1="920.0" y1="433.0" x2="920.0" y2="453" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<line x1="920.0" y1="704" x2="920.0" y2="721.0" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="786" y="730" width="268" height="44" rx="22" fill="#ffffff" stroke="#16232e" stroke-width="2"/>
+<text x="920.0" y="749.0" font-size="14" font-weight="700" fill="#16232e" text-anchor="middle">Dispatch</text>
+<text x="920.0" y="765.0" font-size="11.5" fill="#5a6b7a" text-anchor="middle">Il JPG viene consegnato alla pipeline</text>
+<line x1="920.0" y1="776.0" x2="920.0" y2="796" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<line x1="920.0" y1="1027" x2="920.0" y2="1044.0" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="758" y="1053" width="323" height="44" rx="22" fill="#ffffff" stroke="#16232e" stroke-width="2"/>
+<text x="920.0" y="1072.0" font-size="14" font-weight="700" fill="#16232e" text-anchor="middle">Coda image-to-classify</text>
+<text x="920.0" y="1088.0" font-size="11.5" fill="#5a6b7a" text-anchor="middle">Da qui in avanti gira il progetto resize-image</text>
+<line x1="920.0" y1="1099.0" x2="920.0" y2="1119" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<line x1="920.0" y1="1350" x2="920.0" y2="1367.0" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="792" y="1376" width="255" height="44" rx="22" fill="#ffffff" stroke="#16232e" stroke-width="2"/>
+<text x="920.0" y="1395.0" font-size="14" font-weight="700" fill="#16232e" text-anchor="middle">Upload</text>
+<text x="920.0" y="1411.0" font-size="11.5" fill="#5a6b7a" text-anchor="middle">Consegna ai siti e ritorno di stato</text>
+<line x1="920.0" y1="1422.0" x2="920.0" y2="1442" stroke="#16232e" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="40" y="1701" width="1760" height="84" rx="12" fill="#f7f9fc" stroke="#c9d6e4" stroke-width="1.5"/>
+<text x="60" y="1727" font-size="14" font-weight="700" fill="#16232e">Legenda</text>
+<rect x="60" y="1741" width="20" height="15" rx="4" fill="#e8f2fe" stroke="#1b6ec2" stroke-width="2"/>
+<text x="87" y="1753" font-size="12.5" fill="#5a6b7a">In esecuzione in locale</text>
+<rect x="275.8125" y="1741" width="20" height="15" rx="4" fill="#e3f1e6" stroke="#2e7d32" stroke-width="2"/>
+<text x="302.8125" y="1753" font-size="12.5" fill="#5a6b7a">Azure / Microsoft 365</text>
+<rect x="478.25" y="1741" width="20" height="15" rx="4" fill="#fdf0e3" stroke="#c77700" stroke-width="2"/>
+<text x="505.25" y="1753" font-size="12.5" fill="#5a6b7a">Servizio esterno</text>
+<rect x="647.25" y="1741" width="20" height="15" rx="4" fill="#fdeaea" stroke="#c62828" stroke-width="2" stroke-dasharray="5 4"/>
+<text x="674.25" y="1753" font-size="12.5" fill="#5a6b7a">Non presente nel repository</text>
+<rect x="889.8125" y="1741" width="20" height="15" rx="4" fill="#f0ecfb" stroke="#5b3fa8" stroke-width="2"/>
+<text x="916.8125" y="1753" font-size="12.5" fill="#5a6b7a">Archiviazione dati</text>
+<rect x="60" y="1764" width="88" height="17" rx="8.5" fill="#2e7d32"/>
+<text x="66" y="1776.5" font-size="11" font-weight="700" fill="#ffffff">deterministico</text>
+<text x="156" y="1776.5" font-size="12.5" fill="#5a6b7a">stesso input, stesso risultato</text>
+<rect x="380" y="1764" width="72" height="17" rx="8.5" fill="#7b2ff7"/>
+<text x="386" y="1776.5" font-size="11" font-weight="700" fill="#ffffff">generativo</text>
+<text x="462" y="1776.5" font-size="12.5" fill="#5a6b7a">passa da un modello AI: il risultato può variare</text>
+</svg>

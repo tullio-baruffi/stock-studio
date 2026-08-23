@@ -1,0 +1,30 @@
+# Convenzioni di formato del repository ResizeImage / Stock Vector Studio.
+# Il progetto e' Windows-only (Illustrator COM, WinSCP, System.Drawing): la convenzione
+# di fatto e' CRLF. Renderla esplicita evita che una modifica introduca fine-riga misti,
+# che spezzano le patch testuali multi-riga e sporcano i diff.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.cs]
+indent_size = 4
+
+[*.{ts,tsx,js,jsx,css,json,yml,yaml}]
+indent_size = 2
+
+[*.ps1]
+indent_size = 4
+
+[*.md]
+# Due spazi a fine riga sono un "a capo" significativo in Markdown.
+trim_trailing_whitespace = false
+
+[*.{sln,csproj}]
+indent_style = space
+indent_size = 2

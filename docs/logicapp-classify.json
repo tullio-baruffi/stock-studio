@@ -1,0 +1,820 @@
+{
+  "id": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Logic/workflows/resize-image-to-classify-001",
+  "location": "westeurope",
+  "name": "resize-image-to-classify-001",
+  "properties": {
+    "accessControl": {},
+    "accessEndpoint": "https://prod-251.westeurope.logic.azure.com:443/workflows/c177b2b314064b24b3e5fcbcbca6b10d",
+    "changedTime": "2026-03-08T21:24:59.7157272Z",
+    "createdTime": "2024-07-15T10:16:51.1312063Z",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "actions": {
+        "Condition": {
+          "actions": {
+            "Parse_OpenAI_Choices_Response": {
+              "inputs": {
+                "content": "@first(body('Parse_OpenAI_Response')?['choices'])",
+                "schema": {
+                  "properties": {
+                    "finish_reason": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "runAfter": {
+                "Parse_OpenAI_Response": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ParseJson"
+            },
+            "Parse_OpenAI_Content_Response": {
+              "inputs": {
+                "content": "@decodeUriComponent(body('Parse_OpenAI_Choices_Response')?['message']?['content'])",
+                "schema": {
+                  "properties": {
+                    "description": {
+                      "type": "string"
+                    },
+                    "keywords": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "runAfter": {
+                "Parse_OpenAI_Choices_Response": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ParseJson"
+            },
+            "Parse_OpenAI_Response": {
+              "inputs": {
+                "content": "@variables('OpenAiResponse')",
+                "schema": {
+                  "properties": {
+                    "choices": {
+                      "items": {
+                        "properties": {
+                          "finish_reason": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer"
+                          },
+                          "message": {
+                            "properties": {
+                              "content": {
+                                "type": "string"
+                              },
+                              "role": {
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "message",
+                          "finish_reason",
+                          "index"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "created": {
+                      "type": "integer"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "object": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "properties": {
+                        "completion_tokens": {
+                          "type": "integer"
+                        },
+                        "prompt_tokens": {
+                          "type": "integer"
+                        },
+                        "total_tokens": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "ParseJson"
+            },
+            "Terminate_2": {
+              "inputs": {
+                "runStatus": "Succeeded"
+              },
+              "runAfter": {
+                "Update_file_properties": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Terminate"
+            },
+            "Update_file_properties": {
+              "inputs": {
+                "body": {
+                  "OData__ExtendedDescription": "@body('Parse_OpenAI_Content_Response')?['description']",
+                  "Stato": "REVISIONE: Metadati estratti dall'immagine",
+                  "Tags": "@{join(body('Parse_OpenAI_Content_Response')?['keywords'],',')}",
+                  "Title": "@body('Parse_OpenAI_Content_Response')?['title']"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                  }
+                },
+                "method": "patch",
+                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://cosdh.sharepoint.com/sites/Classifier'))}/tables/@{encodeURIComponent(encodeURIComponent('55d41a6e-e3fb-4135-a727-c3b3da057cd1'))}/items/@{encodeURIComponent(body('Parse_Queue_message')?['IdSharePoint'])}/patchfileitem"
+              },
+              "runAfter": {
+                "Parse_OpenAI_Content_Response": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ApiConnection"
+            }
+          },
+          "else": {
+            "actions": {
+              "Terminate": {
+                "inputs": {
+                  "runError": {
+                    "code": "@{variables('HttpResponseCode')}",
+                    "message": "@{variables('OpenAiResponse')}"
+                  },
+                  "runStatus": "Failed"
+                },
+                "runAfter": {
+                  "Update_Stato_in_Errore": [
+                    "Succeeded"
+                  ]
+                },
+                "type": "Terminate"
+              },
+              "Update_Stato_in_Errore": {
+                "inputs": {
+                  "body": {
+                    "Stato": "COMPLETION: Errore nel prompting verso OpenAI - Errore @{variables('HttpResponseCode')}"
+                  },
+                  "host": {
+                    "connection": {
+                      "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                    }
+                  },
+                  "method": "patch",
+                  "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://cosdh.sharepoint.com/sites/Classifier'))}/tables/@{encodeURIComponent(encodeURIComponent('55d41a6e-e3fb-4135-a727-c3b3da057cd1'))}/items/@{encodeURIComponent(body('Parse_Queue_message')?['IdSharePoint'])}/patchfileitem"
+                },
+                "type": "ApiConnection"
+              }
+            }
+          },
+          "expression": {
+            "and": [
+              {
+                "equals": [
+                  "@variables('HttpResponseCode')",
+                  200
+                ]
+              }
+            ]
+          },
+          "runAfter": {
+            "Initialize_variable": [
+              "Succeeded"
+            ]
+          },
+          "type": "If"
+        },
+        "Delete_blob_(V2)": {
+          "inputs": {
+            "headers": {
+              "SkipDeleteIfFileNotFoundOnServer": false
+            },
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['azureblob']['connectionId']"
+              }
+            },
+            "method": "delete",
+            "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/files/@{encodeURIComponent(encodeURIComponent(body('Parse_Queue_message')?['PathBlob']))}"
+          },
+          "runAfter": {
+            "Set_variable_2": [
+              "Succeeded"
+            ]
+          },
+          "type": "ApiConnection"
+        },
+        "Delete_message_(V2)": {
+          "inputs": {
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['azurequeues-1']['connectionId']"
+              }
+            },
+            "method": "delete",
+            "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/queues/@{encodeURIComponent('shrinked-image-to-classify')}/messages/@{encodeURIComponent(triggerBody()?['MessageId'])}",
+            "queries": {
+              "popreceipt": "@triggerBody()?['PopReceipt']"
+            }
+          },
+          "runAfter": {},
+          "type": "ApiConnection"
+        },
+        "HTTP": {
+          "inputs": {
+            "body": {
+              "messages": [
+                {
+                  "content": [
+                    {
+                      "text": "You are a deterministic Adobe Stock metadata generator running on GPT-5.2. You generate metadata from a single image. You MUST internally validate your output and silently self-correct until ALL rules are satisfied. NEVER reveal drafts, reasoning, validation steps, or errors. OUTPUT CONTRACT: Return ONLY one single-line valid JSON object with EXACTLY three fields: \"keywords\" (array of strings), \"title\" (string), \"description\" (string). No extra text, no markdown, no line breaks, no trailing commas. TITLE RULES: Max 150 characters; 1�2 sentences only; use 1 sentence if no clearly distinct second visual fact exists; sentence 1 must contain main subject plus clear action or state plus concrete setting; sentence 2 if present must add new visible information plus mood or time; sentences separated only by \". \"; max one comma per sentence; concrete nouns and verbs only. FORBIDDEN IN TITLE: outdoor, outdoors, indoor, indoors, camera-facing terms, speculative language, meta phrases such as image of or photo of. LOCATION RULE: If unclear, use a concrete noun like studio background or urban street, never invent locations. KEYWORDS RULES: Keywords must be pure search keywords, never phrases or descriptions. A keyword may be a single lexical word (noun, adjective, or verb) OR a multi-word compound ONLY if it represents a single canonical concept. Allowed multi-word keywords ONLY for official animal breeds or canonical compound nouns. FORBIDDEN IN KEYWORDS: articles, prepositions, conjunctions, determiners, clauses, descriptive fragments. FORMAT: lowercase only, letters a�z digits 0�9 and single spaces only, no punctuation, no duplicates. COUNT: 15�35 keywords. ORDERING: Keywords must follow strict tier ordering. Tier 1 primary subject (breed first if present), Tier 2 core action or state, Tier 3 key attributes, Tier 4 setting or environment, Tier 5 contextual expansion. Tiers must not be interleaved. GENERICITY PENALTY: Highly generic keywords such as pet, animal, lifestyle, nature, object are allowed ONLY at the very end of Tier 5 and must never appear earlier. KEYWORD CONSTRUCTION: Stage A extract up to first 10 concepts from title and assign tiers. Stage B extend to 15�35 keywords enforcing tier order and genericity penalty. DESCRIPTION RULES: Minimum 150 characters, natural English, describe subject, action, setting, composition, lighting, mood, no speculative or meta language. FINAL CHECK: If any rule fails, regenerate internally. Output ONLY the final JSON.",
+                      "type": "text"
+                    },
+                    {
+                      "image_url": {
+                        "detail": "low",
+                        "url": "https://rgclassifier8f3e.blob.core.windows.net/@{body('Parse_Queue_message')?['PathBlob']}"
+                      },
+                      "type": "image_url"
+                    }
+                  ],
+                  "role": "user"
+                }
+              ],
+              "model": "gpt-5-mini"
+            },
+            "headers": {
+              "Authorization": "<RIMOSSO: Bearer token OpenAI>",
+              "Content-Type": "application/json"
+            },
+            "method": "POST",
+            "retryPolicy": {
+              "count": 3,
+              "interval": "PT10S",
+              "type": "fixed"
+            },
+            "uri": "https://api.openai.com/v1/chat/completions"
+          },
+          "limit": {
+            "timeout": "PT5M"
+          },
+          "runAfter": {
+            "Initialize_variable_3": [
+              "Succeeded"
+            ]
+          },
+          "type": "Http"
+        },
+        "Initialize_variable": {
+          "inputs": {
+            "variables": [
+              {
+                "name": "ControlledTags",
+                "type": "array"
+              }
+            ]
+          },
+          "runAfter": {
+            "Delete_blob_(V2)": [
+              "Succeeded"
+            ]
+          },
+          "type": "InitializeVariable"
+        },
+        "Initialize_variable_3": {
+          "inputs": {
+            "variables": [
+              {
+                "name": "HttpResponseCode",
+                "type": "integer",
+                "value": 0
+              },
+              {
+                "name": "OpenAiResponse",
+                "type": "object"
+              }
+            ]
+          },
+          "runAfter": {
+            "Update_Stato_in_SharePoint_-_Presa_in_Carico_OpenAI": [
+              "Succeeded"
+            ]
+          },
+          "type": "InitializeVariable"
+        },
+        "Parse_Queue_message": {
+          "inputs": {
+            "content": "@triggerBody()?['MessageText']",
+            "schema": {
+              "properties": {
+                "BlobName": {
+                  "type": "string"
+                },
+                "IdSharePoint": {
+                  "type": "string"
+                },
+                "PathBlob": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "runAfter": {
+            "Delete_message_(V2)": [
+              "Succeeded"
+            ]
+          },
+          "type": "ParseJson"
+        },
+        "Set_variable": {
+          "inputs": {
+            "name": "HttpResponseCode",
+            "value": "@outputs('HTTP')['statusCode']"
+          },
+          "runAfter": {
+            "HTTP": [
+              "Succeeded"
+            ]
+          },
+          "type": "SetVariable"
+        },
+        "Set_variable_2": {
+          "inputs": {
+            "name": "OpenAiResponse",
+            "value": "@body('HTTP')"
+          },
+          "runAfter": {
+            "Set_variable": [
+              "Succeeded"
+            ]
+          },
+          "type": "SetVariable"
+        },
+        "Update_Stato_in_SharePoint_-_Presa_in_Carico_OpenAI": {
+          "inputs": {
+            "body": {
+              "Stato": "COMPLETION: Resize effettuato, prompting OpenAI"
+            },
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+              }
+            },
+            "method": "patch",
+            "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://cosdh.sharepoint.com/sites/Classifier'))}/tables/@{encodeURIComponent(encodeURIComponent('55d41a6e-e3fb-4135-a727-c3b3da057cd1'))}/items/@{encodeURIComponent(body('Parse_Queue_message')?['IdSharePoint'])}/patchfileitem"
+          },
+          "runAfter": {
+            "Parse_Queue_message": [
+              "Succeeded"
+            ]
+          },
+          "type": "ApiConnection"
+        }
+      },
+      "contentVersion": "1.0.0.0",
+      "outputs": {},
+      "parameters": {
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        }
+      },
+      "triggers": {
+        "When_there_are_messages_in_a_queue_(V2)": {
+          "evaluatedRecurrence": {
+            "frequency": "Minute",
+            "interval": 1
+          },
+          "inputs": {
+            "host": {
+              "connection": {
+                "name": "@parameters('$connections')['azurequeues-1']['connectionId']"
+              }
+            },
+            "method": "get",
+            "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/queues/@{encodeURIComponent('shrinked-image-to-classify')}/message_trigger"
+          },
+          "recurrence": {
+            "frequency": "Minute",
+            "interval": 1
+          },
+          "splitOn": "@triggerBody()?['QueueMessagesList']?['QueueMessage']",
+          "type": "ApiConnection"
+        }
+      }
+    },
+    "endpointsConfiguration": {
+      "connector": {
+        "outgoingIpAddresses": [
+          {
+            "address": "52.174.88.118"
+          },
+          {
+            "address": "40.91.208.65"
+          },
+          {
+            "address": "13.69.64.208/28"
+          },
+          {
+            "address": "13.69.71.192/27"
+          },
+          {
+            "address": "13.93.36.78"
+          },
+          {
+            "address": "20.86.93.32/27"
+          },
+          {
+            "address": "20.86.93.64/28"
+          },
+          {
+            "address": "20.126.243.151"
+          },
+          {
+            "address": "20.126.241.238"
+          },
+          {
+            "address": "20.103.132.139"
+          },
+          {
+            "address": "20.103.131.1"
+          }
+        ]
+      },
+      "workflow": {
+        "accessEndpointIpAddresses": [
+          {
+            "address": "98.64.193.78"
+          },
+          {
+            "address": "98.64.194.143"
+          },
+          {
+            "address": "98.64.198.223"
+          },
+          {
+            "address": "98.64.198.203"
+          },
+          {
+            "address": "98.64.208.186"
+          },
+          {
+            "address": "98.64.209.52"
+          },
+          {
+            "address": "172.211.196.189"
+          },
+          {
+            "address": "172.211.195.251"
+          },
+          {
+            "address": "98.64.154.66"
+          },
+          {
+            "address": "98.64.156.81"
+          },
+          {
+            "address": "98.64.156.180"
+          },
+          {
+            "address": "98.64.156.68"
+          },
+          {
+            "address": "20.238.229.165"
+          },
+          {
+            "address": "20.8.128.2"
+          },
+          {
+            "address": "20.238.230.113"
+          },
+          {
+            "address": "108.141.139.111"
+          },
+          {
+            "address": "108.142.111.162"
+          },
+          {
+            "address": "108.142.111.174"
+          },
+          {
+            "address": "108.142.111.178"
+          },
+          {
+            "address": "108.142.111.183"
+          },
+          {
+            "address": "108.142.111.152"
+          },
+          {
+            "address": "108.142.111.156"
+          },
+          {
+            "address": "108.142.111.179"
+          },
+          {
+            "address": "108.142.111.169"
+          },
+          {
+            "address": "98.64.203.30"
+          },
+          {
+            "address": "98.64.156.172"
+          },
+          {
+            "address": "20.56.202.157"
+          },
+          {
+            "address": "20.56.203.30"
+          },
+          {
+            "address": "57.153.19.33"
+          },
+          {
+            "address": "57.153.59.202"
+          },
+          {
+            "address": "108.141.95.140"
+          },
+          {
+            "address": "20.61.147.216"
+          },
+          {
+            "address": "57.153.83.52"
+          },
+          {
+            "address": "57.153.38.174"
+          },
+          {
+            "address": "57.153.3.13"
+          },
+          {
+            "address": "57.153.1.223"
+          },
+          {
+            "address": "108.142.29.55"
+          },
+          {
+            "address": "108.142.31.220"
+          },
+          {
+            "address": "108.142.31.202"
+          },
+          {
+            "address": "20.61.153.22"
+          },
+          {
+            "address": "57.153.7.252"
+          },
+          {
+            "address": "108.141.83.61"
+          },
+          {
+            "address": "57.153.7.252"
+          },
+          {
+            "address": "108.141.83.61"
+          }
+        ],
+        "outgoingIpAddresses": [
+          {
+            "address": "20.103.17.247"
+          },
+          {
+            "address": "20.103.16.47"
+          },
+          {
+            "address": "20.103.57.29"
+          },
+          {
+            "address": "20.101.174.23"
+          },
+          {
+            "address": "20.93.235.107"
+          },
+          {
+            "address": "20.76.174.72"
+          },
+          {
+            "address": "20.82.87.16"
+          },
+          {
+            "address": "20.103.91.39"
+          },
+          {
+            "address": "20.76.161.156"
+          },
+          {
+            "address": "98.64.193.64"
+          },
+          {
+            "address": "98.64.194.135"
+          },
+          {
+            "address": "98.64.198.219"
+          },
+          {
+            "address": "98.64.198.194"
+          },
+          {
+            "address": "98.64.208.46"
+          },
+          {
+            "address": "98.64.209.43"
+          },
+          {
+            "address": "172.211.196.188"
+          },
+          {
+            "address": "172.211.195.181"
+          },
+          {
+            "address": "98.64.157.37"
+          },
+          {
+            "address": "98.64.156.69"
+          },
+          {
+            "address": "98.64.156.152"
+          },
+          {
+            "address": "98.64.156.62"
+          },
+          {
+            "address": "20.238.229.108"
+          },
+          {
+            "address": "108.141.139.225"
+          },
+          {
+            "address": "20.238.230.87"
+          },
+          {
+            "address": "108.141.139.80"
+          },
+          {
+            "address": "108.142.111.161"
+          },
+          {
+            "address": "108.142.111.173"
+          },
+          {
+            "address": "108.142.111.175"
+          },
+          {
+            "address": "108.142.111.182"
+          },
+          {
+            "address": "108.142.111.151"
+          },
+          {
+            "address": "108.142.111.155"
+          },
+          {
+            "address": "108.142.111.157"
+          },
+          {
+            "address": "108.142.111.167"
+          },
+          {
+            "address": "98.64.203.5"
+          },
+          {
+            "address": "98.64.156.150"
+          },
+          {
+            "address": "20.56.202.134"
+          },
+          {
+            "address": "20.56.202.244"
+          },
+          {
+            "address": "57.153.19.27"
+          },
+          {
+            "address": "57.153.59.193"
+          },
+          {
+            "address": "108.141.95.129"
+          },
+          {
+            "address": "20.61.147.200"
+          },
+          {
+            "address": "57.153.83.40"
+          },
+          {
+            "address": "57.153.38.60"
+          },
+          {
+            "address": "57.153.2.162"
+          },
+          {
+            "address": "57.153.1.215"
+          },
+          {
+            "address": "108.142.24.182"
+          },
+          {
+            "address": "108.142.31.170"
+          },
+          {
+            "address": "108.142.31.143"
+          },
+          {
+            "address": "20.61.152.226"
+          },
+          {
+            "address": "57.153.7.245"
+          },
+          {
+            "address": "108.141.83.46"
+          },
+          {
+            "address": "57.153.7.245"
+          },
+          {
+            "address": "108.141.83.46"
+          }
+        ]
+      }
+    },
+    "parameters": {
+      "$connections": {
+        "value": {
+          "azureblob": {
+            "connectionId": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/connections/azureblob-1",
+            "connectionName": "azureblob-1",
+            "connectionProperties": {},
+            "id": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/providers/Microsoft.Web/locations/westeurope/managedApis/azureblob"
+          },
+          "azurequeues-1": {
+            "connectionId": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/connections/azurequeues-1",
+            "connectionName": "azurequeues-1",
+            "connectionProperties": {},
+            "id": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/providers/Microsoft.Web/locations/westeurope/managedApis/azurequeues"
+          },
+          "sharepointonline": {
+            "connectionId": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/connections/sharepointonline-2",
+            "connectionName": "sharepointonline-2",
+            "connectionProperties": {},
+            "id": "/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/providers/Microsoft.Web/locations/westeurope/managedApis/sharepointonline"
+          }
+        }
+      }
+    },
+    "provisioningState": "Succeeded",
+    "runtimeConfiguration": {
+      "lifetime": {
+        "count": 7,
+        "unit": "Day"
+      }
+    },
+    "state": "Enabled",
+    "version": "08584286017857775955"
+  },
+  "type": "Microsoft.Logic/workflows"
+}

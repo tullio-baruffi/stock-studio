@@ -1,0 +1,14 @@
+# Il repository e' Windows-only: normalizza tutto a CRLF nella working copy,
+# cosi' un eventuale clone su un altro sistema non reintroduce fine-riga misti.
+* text=auto eol=crlf
+
+# File binari: mai toccare i byte.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.pfx   binary
+*.eps   binary
+*.ai    binary

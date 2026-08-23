@@ -1,0 +1,398 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1510" viewBox="0 0 2400 1510">
+  <defs>
+    <style>
+      .title{font:700 36px "Segoe UI",Arial,sans-serif;fill:#172b4d}
+      .subtitle{font:400 17px "Segoe UI",Arial,sans-serif;fill:#5b6b82}
+      .section{font:700 18px "Segoe UI",Arial,sans-serif;fill:#24456b;letter-spacing:.7px}
+      .name{font:700 16px "Segoe UI",Arial,sans-serif;fill:#172b4d}
+      .type{font:600 12px "Segoe UI",Arial,sans-serif;fill:#0078d4;text-transform:uppercase;letter-spacing:.6px}
+      .desc{font:400 12px "Segoe UI",Arial,sans-serif;fill:#40536d}
+      .mono{font:600 11px Consolas,"Courier New",monospace;fill:#334155}
+      .label{font:600 11px "Segoe UI",Arial,sans-serif;fill:#53657d}
+      .pill{font:700 11px "Segoe UI",Arial,sans-serif;fill:#fff}
+      .card{fill:#fff;stroke:#b8c7da;stroke-width:1.5;rx:10;ry:10;filter:url(#shadow)}
+      .icon-bg{fill:#0078d4;rx:8;ry:8}
+      .icon-bg-green{fill:#038387;rx:8;ry:8}
+      .icon-bg-purple{fill:#8661c5;rx:8;ry:8}
+      .icon-bg-orange{fill:#d83b01;rx:8;ry:8}
+      .icon-bg-grey{fill:#607d8b;rx:8;ry:8}
+      .flow{fill:none;stroke:#0078d4;stroke-width:3;marker-end:url(#arrow)}
+      .flow-green{fill:none;stroke:#038387;stroke-width:3;marker-end:url(#arrowGreen)}
+      .flow-grey{fill:none;stroke:#607d8b;stroke-width:2.5;marker-end:url(#arrowGrey)}
+      .dash{stroke-dasharray:8 6}
+    </style>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#315b7d" flood-opacity=".16"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0078d4"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#038387"/>
+    </marker>
+    <marker id="arrowGrey" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#607d8b"/>
+    </marker>
+
+    <!-- Azure-inspired self-contained glyphs -->
+    <symbol id="i-web" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="17" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M7 24h34M24 7c8 8 8 26 0 34M24 7c-8 8-8 26 0 34" fill="none" stroke="#fff" stroke-width="2.5"/>
+    </symbol>
+    <symbol id="i-api" viewBox="0 0 48 48">
+      <path d="M15 11 5 24l10 13M33 11l10 13-10 13M29 7 19 41" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-table" viewBox="0 0 48 48">
+      <ellipse cx="24" cy="11" rx="17" ry="7" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M7 11v25c0 4 8 7 17 7s17-3 17-7V11M7 23c0 4 8 7 17 7s17-3 17-7" fill="none" stroke="#fff" stroke-width="3"/>
+    </symbol>
+    <symbol id="i-sharepoint" viewBox="0 0 48 48">
+      <circle cx="15" cy="24" r="10" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="31" cy="16" r="8" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="32" cy="33" r="9" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M22 20l5-2M22 29l4 2" stroke="#fff" stroke-width="3"/>
+    </symbol>
+    <symbol id="i-queue" viewBox="0 0 48 48">
+      <rect x="7" y="8" width="34" height="8" rx="3" fill="none" stroke="#fff" stroke-width="3"/>
+      <rect x="7" y="20" width="34" height="8" rx="3" fill="none" stroke="#fff" stroke-width="3"/>
+      <rect x="7" y="32" width="34" height="8" rx="3" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="13" cy="12" r="2" fill="#fff"/><circle cx="13" cy="24" r="2" fill="#fff"/><circle cx="13" cy="36" r="2" fill="#fff"/>
+    </symbol>
+    <symbol id="i-function" viewBox="0 0 48 48">
+      <path d="M28 4 12 27h12l-4 17 16-24H24z" fill="#fff"/>
+    </symbol>
+    <symbol id="i-blob" viewBox="0 0 48 48">
+      <path d="M24 5c-7 11-14 19-14 27a14 14 0 0 0 28 0c0-8-7-16-14-27z" fill="none" stroke="#fff" stroke-width="3"/>
+    </symbol>
+    <symbol id="i-logic" viewBox="0 0 48 48">
+      <circle cx="9" cy="24" r="5" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="39" cy="11" r="5" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="39" cy="37" r="5" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M14 24h9M23 24c7 0 7-13 11-13M23 24c7 0 7 13 11 13" fill="none" stroke="#fff" stroke-width="3"/>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 48 48">
+      <circle cx="18" cy="20" r="10" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="m25 27 15 15M34 36l5-5M29 31l5-5" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-monitor" viewBox="0 0 48 48">
+      <path d="M6 37h36V9H6zM12 29l7-8 6 5 10-12" fill="none" stroke="#fff" stroke-width="3"/>
+    </symbol>
+    <symbol id="i-market" viewBox="0 0 48 48">
+      <path d="M8 18h32l-3-9H11zM10 18v22h28V18M17 40V28h14v12" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M8 18c0 5 8 5 8 0 0 5 8 5 8 0 0 5 8 5 8 0 0 5 8 5 8 0" fill="none" stroke="#fff" stroke-width="3"/>
+    </symbol>
+  </defs>
+
+  <rect width="2400" height="1510" fill="#f4f7fb"/>
+  <text x="55" y="55" class="title">Stock Vector Studio — Diagramma architetturale Azure</text>
+  <text x="55" y="86" class="subtitle">Risorse effettive e nomi tecnici rilevati nel repository · Regione Logic App: West Europe</text>
+
+  <!-- Status legend -->
+  <rect x="1710" y="26" width="630" height="72" rx="12" fill="#fff" stroke="#c7d4e4"/>
+  <rect x="1732" y="43" width="105" height="24" rx="12" fill="#107c10"/><text x="1751" y="59" class="pill">ATTIVO</text>
+  <text x="1848" y="59" class="desc">configurato nel runtime attuale</text>
+  <rect x="2045" y="43" width="120" height="24" rx="12" fill="#8a8886"/><text x="2062" y="59" class="pill">OPZIONALE</text>
+  <text x="2175" y="59" class="desc">supportato, non attivo</text>
+  <text x="1732" y="86" class="tiny">I nomi non presenti nei file di configurazione sono indicati esplicitamente come “non tracciati”.</text>
+
+  <!-- ============================================================ -->
+  <!-- CURRENT APP -->
+  <!-- ============================================================ -->
+  <rect x="35" y="125" width="2330" height="275" rx="18" fill="#edf6ff" stroke="#9cc8eb" stroke-width="2"/>
+  <text x="60" y="157" class="section">APPLICATIVO STOCK VECTOR STUDIO · AMBIENTE CORRENTE: DEVELOPMENT</text>
+
+  <g>
+    <rect x="80" y="205" width="360" height="145" class="card"/>
+    <rect x="102" y="226" width="58" height="58" class="icon-bg"/>
+    <use href="#i-web" x="108" y="232" width="46" height="46"/>
+    <text x="180" y="239" class="type">REACT SPA</text>
+    <text x="180" y="263" class="name">Stock Vector Studio</text>
+    <text x="180" y="286" class="mono">http://127.0.0.1:5173</text>
+    <text x="102" y="320" class="desc">Carica · Monitor · Pipeline · Opportunità</text>
+    <text x="102" y="340" class="desc">Sistema · Configurazione · Guida</text>
+  </g>
+
+  <g>
+    <rect x="500" y="205" width="360" height="145" class="card"/>
+    <rect x="522" y="226" width="58" height="58" class="icon-bg"/>
+    <use href="#i-api" x="528" y="232" width="46" height="46"/>
+    <text x="600" y="239" class="type">ASP.NET CORE API · .NET 8</text>
+    <text x="600" y="263" class="name">StockStudio.Api</text>
+    <text x="600" y="286" class="mono">http://localhost:5080</text>
+    <text x="522" y="320" class="desc">Job orchestration · vectorization · export</text>
+    <text x="522" y="340" class="desc">Pipeline dispatcher · trends · health</text>
+  </g>
+
+  <g>
+    <rect x="920" y="205" width="360" height="145" class="card"/>
+    <rect x="942" y="226" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-table" x="948" y="232" width="46" height="46"/>
+    <text x="1020" y="239" class="type">AZURE TABLE API / EMULATORE</text>
+    <text x="1020" y="263" class="name">stockstudiojobs</text>
+    <text x="1020" y="286" class="mono">Azurite · UseDevelopmentStorage=true</text>
+    <text x="942" y="320" class="desc">Job · item · indice dispatch/callback</text>
+    <text x="942" y="340" class="desc">Alternativa production: Azure Table Storage</text>
+  </g>
+
+  <g>
+    <rect x="1340" y="205" width="360" height="145" class="card"/>
+    <rect x="1362" y="226" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-api" x="1368" y="232" width="46" height="46"/>
+    <text x="1440" y="239" class="type">VECTORIZATION ENGINE</text>
+    <text x="1440" y="263" class="name">OpenSourceVectorizer</text>
+    <text x="1440" y="286" class="mono">Otsu + tools/potrace/potrace.exe</text>
+    <text x="1362" y="320" class="desc">Output: SVG · EPS · JPG</text>
+    <text x="1362" y="340" class="desc">Alternativa: IllustratorVectorizer COM + JSX</text>
+  </g>
+
+  <g>
+    <rect x="1760" y="205" width="550" height="145" class="card"/>
+    <rect x="1782" y="226" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-key" x="1788" y="232" width="46" height="46"/>
+    <text x="1860" y="239" class="type">CONFIGURATION &amp; SECRETS</text>
+    <text x="1860" y="263" class="name">User Secrets / Environment</text>
+    <text x="1860" y="286" class="mono">KeyVault:Uri = non configurato</text>
+    <text x="1782" y="320" class="desc">AI locale: stub · agente: fallback deterministico</text>
+    <text x="1782" y="340" class="desc">Azure Key Vault supportato come alternativa</text>
+  </g>
+
+  <path d="M440 278 H500" class="flow"/>
+  <path d="M860 278 H920" class="flow-grey"/>
+  <path d="M1280 278 H1340" class="flow"/>
+  <text x="453" y="265" class="label">REST</text>
+  <text x="875" y="265" class="label">persist</text>
+  <text x="1293" y="265" class="label">process</text>
+
+  <!-- ============================================================ -->
+  <!-- M365 / AZURE BOUNDARIES -->
+  <!-- ============================================================ -->
+  <rect x="35" y="430" width="500" height="995" rx="18" fill="#eef9f7" stroke="#71b8af" stroke-width="2"/>
+  <text x="60" y="462" class="section">MICROSOFT 365 · SHAREPOINT ONLINE</text>
+  <text x="60" y="487" class="mono">Tenant: cosdh.onmicrosoft.com</text>
+
+  <rect x="565" y="430" width="1300" height="995" rx="18" fill="#eef6fd" stroke="#6bb4df" stroke-width="2"/>
+  <text x="590" y="462" class="section">AZURE · PIPELINE CLASSIFIER</text>
+  <text x="590" y="487" class="mono">Logic App region: West Europe · Resource group / Function App display name: non tracciati nel repository</text>
+
+  <rect x="1895" y="430" width="470" height="995" rx="18" fill="#fff7ed" stroke="#f2ad72" stroke-width="2"/>
+  <text x="1920" y="462" class="section">DESTINAZIONI ESTERNE</text>
+
+  <!-- SharePoint cards -->
+  <g>
+    <rect x="80" y="535" width="410" height="155" class="card"/>
+    <rect x="102" y="556" width="58" height="58" class="icon-bg-green"/>
+    <use href="#i-sharepoint" x="108" y="562" width="46" height="46"/>
+    <text x="180" y="569" class="type">SHAREPOINT SITE</text>
+    <text x="180" y="593" class="name">Classifier</text>
+    <text x="180" y="616" class="mono">cosdh.sharepoint.com/sites/Classifier</text>
+    <text x="102" y="650" class="desc">Autenticazione app-only con pnp.pfx</text>
+    <text x="102" y="672" class="desc">ClientId: 20afabb4-…-994f</text>
+  </g>
+
+  <g>
+    <rect x="80" y="750" width="410" height="120" class="card"/>
+    <rect x="102" y="771" width="58" height="58" class="icon-bg-green"/>
+    <use href="#i-sharepoint" x="108" y="777" width="46" height="46"/>
+    <text x="180" y="784" class="type">DOCUMENT LIBRARY</text>
+    <text x="180" y="810" class="name">ImagesToClassify</text>
+    <text x="180" y="834" class="mono">/sites/Classifier/ImagesToClassify</text>
+    <text x="102" y="858" class="desc">Ingresso: JPG + deliverable disponibili</text>
+  </g>
+
+  <g>
+    <rect x="80" y="1035" width="410" height="120" class="card"/>
+    <rect x="102" y="1056" width="58" height="58" class="icon-bg-green"/>
+    <use href="#i-sharepoint" x="108" y="1062" width="46" height="46"/>
+    <text x="180" y="1069" class="type">DOCUMENT LIBRARY</text>
+    <text x="180" y="1095" class="name">ImagesToSend</text>
+    <text x="180" y="1119" class="mono">post-AI / pre-upload</text>
+    <text x="102" y="1143" class="desc">Stadio intermedio della pipeline</text>
+  </g>
+
+  <g>
+    <rect x="80" y="1220" width="410" height="120" class="card"/>
+    <rect x="102" y="1241" width="58" height="58" class="icon-bg-green"/>
+    <use href="#i-sharepoint" x="108" y="1247" width="46" height="46"/>
+    <text x="180" y="1254" class="type">DOCUMENT LIBRARY</text>
+    <text x="180" y="1280" class="name">ImagesSent</text>
+    <text x="180" y="1304" class="mono">archivio pubblicati</text>
+    <text x="102" y="1328" class="desc">File con EXIF e stato finale</text>
+  </g>
+
+  <!-- Azure storage account and resources -->
+  <g>
+    <rect x="610" y="535" width="1210" height="335" rx="14" fill="#f8fbff" stroke="#79b8df" stroke-width="2"/>
+    <rect x="632" y="555" width="58" height="58" class="icon-bg"/>
+    <use href="#i-table" x="638" y="561" width="46" height="46"/>
+    <text x="710" y="568" class="type">AZURE STORAGE ACCOUNT</text>
+    <text x="710" y="594" class="name">Nome risorsa non tracciato</text>
+    <text x="710" y="618" class="mono">App setting connection: rgclassifier8f3e_STORAGE</text>
+
+    <rect x="635" y="660" width="250" height="155" class="card"/>
+    <rect x="655" y="680" width="50" height="50" class="icon-bg"/>
+    <use href="#i-queue" x="660" y="685" width="40" height="40"/>
+    <text x="720" y="691" class="type">STORAGE QUEUE</text>
+    <text x="720" y="715" class="name">image-to-classify</text>
+    <text x="655" y="750" class="desc">Trigger Function 1</text>
+    <text x="655" y="775" class="mono">ResizeQueueMessage</text>
+
+    <rect x="930" y="660" width="250" height="155" class="card"/>
+    <rect x="950" y="680" width="50" height="50" class="icon-bg"/>
+    <use href="#i-blob" x="955" y="685" width="40" height="40"/>
+    <text x="1015" y="691" class="type">BLOB CONTAINER</text>
+    <text x="1015" y="715" class="name">shrinked-images</text>
+    <text x="950" y="750" class="desc">Output Function 1</text>
+    <text x="950" y="775" class="mono">idempotent upload</text>
+
+    <rect x="1225" y="660" width="260" height="155" class="card"/>
+    <rect x="1245" y="680" width="50" height="50" class="icon-bg"/>
+    <use href="#i-queue" x="1250" y="685" width="40" height="40"/>
+    <text x="1310" y="691" class="type">STORAGE QUEUE</text>
+    <text x="1310" y="715" class="name">shrinked-image-to-classify</text>
+    <text x="1245" y="750" class="desc">Input della Logic App</text>
+    <text x="1245" y="775" class="mono">1 messaggio per immagine</text>
+
+    <rect x="1530" y="660" width="250" height="155" class="card"/>
+    <rect x="1550" y="680" width="50" height="50" class="icon-bg"/>
+    <use href="#i-queue" x="1555" y="685" width="40" height="40"/>
+    <text x="1615" y="691" class="type">STORAGE QUEUE</text>
+    <text x="1615" y="715" class="name">images-to-send</text>
+    <text x="1550" y="750" class="desc">Trigger Function 2</text>
+    <text x="1550" y="775" class="mono">metadati definitivi inclusi</text>
+  </g>
+
+  <!-- Azure compute -->
+  <g>
+    <rect x="610" y="930" width="360" height="175" class="card"/>
+    <rect x="632" y="952" width="58" height="58" class="icon-bg"/>
+    <use href="#i-function" x="638" y="958" width="46" height="46"/>
+    <text x="710" y="965" class="type">AZURE FUNCTION</text>
+    <text x="710" y="991" class="name">ResizeImageToClassify</text>
+    <text x="710" y="1015" class="mono">Function App: nome non tracciato</text>
+    <text x="632" y="1050" class="desc">SharePoint → Blob → Queue</text>
+    <text x="632" y="1074" class="desc">batchSize 1 · visibility 1 minuto</text>
+  </g>
+
+  <g>
+    <rect x="1015" y="930" width="360" height="175" class="card"/>
+    <rect x="1037" y="952" width="58" height="58" class="icon-bg-purple"/>
+    <use href="#i-logic" x="1043" y="958" width="46" height="46"/>
+    <text x="1115" y="965" class="type">AZURE LOGIC APP · WEST EUROPE</text>
+    <text x="1115" y="991" class="name">Workflow 69a3684f…d228</text>
+    <text x="1115" y="1015" class="mono">manual trigger / AI classification</text>
+    <text x="1037" y="1050" class="desc">Genera Title · Description · Tags</text>
+    <text x="1037" y="1074" class="desc">Nome display non tracciato</text>
+  </g>
+
+  <g>
+    <rect x="1420" y="930" width="360" height="175" class="card"/>
+    <rect x="1442" y="952" width="58" height="58" class="icon-bg"/>
+    <use href="#i-function" x="1448" y="958" width="46" height="46"/>
+    <text x="1520" y="965" class="type">AZURE FUNCTION</text>
+    <text x="1520" y="991" class="name">UploadFileViaSFTP</text>
+    <text x="1520" y="1015" class="mono">Function App: nome non tracciato</text>
+    <text x="1442" y="1050" class="desc">EXIF · SFTP/FTP · SharePoint</text>
+    <text x="1442" y="1074" class="desc">Callback firmata al dashboard</text>
+  </g>
+
+  <g>
+    <rect x="610" y="1190" width="360" height="145" class="card"/>
+    <rect x="632" y="1212" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-monitor" x="638" y="1218" width="46" height="46"/>
+    <text x="710" y="1225" class="type">APPLICATION INSIGHTS</text>
+    <text x="710" y="1251" class="name">Nome risorsa non tracciato</text>
+    <text x="710" y="1275" class="mono">host.json: sampling + live metrics</text>
+    <text x="632" y="1310" class="desc">Telemetria Azure Functions</text>
+  </g>
+
+  <g>
+    <rect x="1015" y="1190" width="360" height="145" class="card"/>
+    <rect x="1037" y="1212" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-key" x="1043" y="1218" width="46" height="46"/>
+    <text x="1115" y="1225" class="type">AZURE KEY VAULT · OPZIONALE</text>
+    <text x="1115" y="1251" class="name">Non configurato</text>
+    <text x="1115" y="1275" class="mono">KeyVault:Uri</text>
+    <text x="1037" y="1310" class="desc">Managed Identity + RBAC supportati</text>
+  </g>
+
+  <g>
+    <rect x="1420" y="1190" width="360" height="145" class="card"/>
+    <rect x="1442" y="1212" width="58" height="58" class="icon-bg-grey"/>
+    <use href="#i-api" x="1448" y="1218" width="46" height="46"/>
+    <text x="1520" y="1225" class="type">CALLBACK DASHBOARD</text>
+    <text x="1520" y="1251" class="name">POST /api/pipeline/callback</text>
+    <text x="1520" y="1275" class="mono">X-Callback-Secret</text>
+    <text x="1442" y="1310" class="desc">published / publish_failed + metadati</text>
+  </g>
+
+  <!-- External destinations -->
+  <g>
+    <rect x="1940" y="535" width="380" height="160" class="card"/>
+    <rect x="1962" y="557" width="58" height="58" class="icon-bg-orange"/>
+    <use href="#i-market" x="1968" y="563" width="46" height="46"/>
+    <text x="2040" y="570" class="type">SFTP DESTINATION</text>
+    <text x="2040" y="596" class="name">AdobeStock</text>
+    <text x="2040" y="620" class="mono">sftp.contributor.adobestock.com:22</text>
+    <text x="1962" y="655" class="desc">Remote directory: /</text>
+    <text x="1962" y="678" class="desc">Credenziali non rappresentate</text>
+  </g>
+
+  <g>
+    <rect x="1940" y="745" width="380" height="160" class="card"/>
+    <rect x="1962" y="767" width="58" height="58" class="icon-bg-orange"/>
+    <use href="#i-market" x="1968" y="773" width="46" height="46"/>
+    <text x="2040" y="780" class="type">SFTP DESTINATION</text>
+    <text x="2040" y="806" class="name">Freepik</text>
+    <text x="2040" y="830" class="mono">contributor-ftp.freepik.com:60022</text>
+    <text x="1962" y="865" class="desc">Remote directory: /</text>
+    <text x="1962" y="888" class="desc">Credenziali non rappresentate</text>
+  </g>
+
+  <g>
+    <rect x="1940" y="955" width="380" height="205" class="card"/>
+    <rect x="1962" y="977" width="58" height="58" class="icon-bg-orange"/>
+    <use href="#i-market" x="1968" y="983" width="46" height="46"/>
+    <text x="2040" y="990" class="type">ALTRE DESTINAZIONI ATTIVE</text>
+    <text x="2040" y="1016" class="name">YayImages · DreamsTime</text>
+    <text x="1962" y="1052" class="mono">ftp.yayimages.com:21 /images</text>
+    <text x="1962" y="1076" class="mono">upload.dreamstime.com:21 /</text>
+    <text x="1962" y="1112" class="desc">123RF presente ma disabilitato</text>
+    <text x="1962" y="1136" class="desc">Altri endpoint in DisableSettings</text>
+  </g>
+
+  <!-- Numbered flow connectors, confined to gutters -->
+  <path d="M500 810 H565 V735 H635" class="flow-green"/>
+
+  <path d="M1180 735 H1225" class="flow"/>
+
+  <path d="M760 815 V900 H790 V930" class="flow"/>
+
+  <path d="M790 930 V845 H1055 V815" class="flow"/>
+
+  <path d="M1355 815 V900 H1195 V930" class="flow"/>
+
+  <path d="M1375 1018 H1495 V845 H1655 V815" class="flow"/>
+
+  <path d="M1655 815 V900 H1600 V930" class="flow"/>
+
+  <!-- Function 2 outputs: dedicated right gutter, no card crossing -->
+  <path d="M1780 1018 H1850 V615 H1940" class="flow"/>
+  <path d="M1850 825 H1940" class="flow"/>
+  <path d="M1850 1058 H1940" class="flow"/>
+
+  <!-- SharePoint lifecycle: left gutter, no crossing -->
+  <path d="M1600 1105 V1165 H535 V1095 H490" class="flow-green"/>
+  <path d="M285 1155 V1220" class="flow-green"/>
+
+  <!-- Callback: bottom gutter -->
+  <path d="M1600 1165 V1190" class="flow-grey"/>
+
+  <!-- Notes -->
+  <rect x="1940" y="1240" width="380" height="105" rx="12" fill="#fff" stroke="#c7d4e4"/>
+  <text x="1962" y="1266" class="type">NOMI NON DISPONIBILI</text>
+  <text x="1962" y="1292" class="desc">Function App, Storage Account, Resource Group,</text>
+  <text x="1962" y="1315" class="desc">Logic App display name e Application Insights.</text>
+  <text x="1962" y="1338" class="tiny">Il diagramma usa ID e app-setting certi, senza inferenze.</text>
+
+  <text x="55" y="1470" class="tiny">Flusso principale: SharePoint → Queue → Function 1 → Blob/Queue → Logic App → Queue → Function 2 → marketplace + SharePoint → callback dashboard.</text>
+</svg>

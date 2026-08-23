@@ -1,0 +1,40 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+dist/
+node_modules/
+
+# Local Azure Storage emulator (Azurite) data
+.azurite/
+
+# Runtime artifacts (jobs, generated vectors) — never commit
+Storage/
+backend/StockStudio.Api/Storage/
+
+# Downloaded tools (potrace binary)
+backend/StockStudio.Api/tools/
+
+# Local secrets / env — keep credentials OUT of git
+*.user
+appsettings.*.local.json
+.env
+.env.*
+
+# Certificates — do NOT commit private keys
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+
+# Legacy resize-image secrets and local artifacts
+resize-image/appsettings.json
+resize-image/Certificate/
+resize-image/Exif/*.exe
+resize-image/bin/
+resize-image/obj/
+
+# IDE
+.vs/
+.idea/
+*.suo

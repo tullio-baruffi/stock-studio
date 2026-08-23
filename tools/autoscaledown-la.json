@@ -1,0 +1,67 @@
+{
+  "location": "westeurope",
+  "identity": { "type": "SystemAssigned" },
+  "properties": {
+    "state": "Enabled",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {},
+      "triggers": {
+        "OgniSera": {
+          "type": "Recurrence",
+          "recurrence": {
+            "frequency": "Day",
+            "interval": 1,
+            "timeZone": "W. Europe Standard Time",
+            "schedule": { "hours": [ "21" ], "minutes": [ 0 ] }
+          }
+        }
+      },
+      "actions": {
+        "LeggiPiano": {
+          "type": "Http",
+          "inputs": {
+            "method": "GET",
+            "uri": "https://management.azure.com/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/serverfarms/asp-stock-api-001?api-version=2022-03-01",
+            "authentication": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com/" }
+          }
+        },
+        "SeNonEGratuito": {
+          "type": "If",
+          "runAfter": { "LeggiPiano": [ "Succeeded" ] },
+          "expression": {
+            "not": { "equals": [ "@body('LeggiPiano')?['sku']?['name']", "F1" ] }
+          },
+          "actions": {
+            "SpegniAlwaysOn": {
+              "type": "Http",
+              "inputs": {
+                "method": "PATCH",
+                "uri": "https://management.azure.com/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/sites/stock-vector-studio-api/config/web?api-version=2022-03-01",
+                "body": { "properties": { "alwaysOn": false } },
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com/" }
+              }
+            },
+            "TornaSuF1": {
+              "type": "Http",
+              "runAfter": { "SpegniAlwaysOn": [ "Succeeded", "Failed" ] },
+              "inputs": {
+                "method": "PUT",
+                "uri": "https://management.azure.com/subscriptions/3d72e432-e4d9-471d-9be5-2b0d1d8485bb/resourceGroups/rg-classifier/providers/Microsoft.Web/serverfarms/asp-stock-api-001?api-version=2022-03-01",
+                "body": {
+                  "location": "westeurope",
+                  "sku": { "name": "F1", "tier": "Free", "size": "F1", "family": "F", "capacity": 1 },
+                  "properties": {}
+                },
+                "authentication": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com/" }
+              }
+            }
+          },
+          "else": { "actions": {} }
+        }
+      },
+      "outputs": {}
+    }
+  }
+}
