@@ -30,7 +30,6 @@ appsettings.*.local.json
 # Legacy resize-image secrets and local artifacts
 resize-image/appsettings.json
 resize-image/Certificate/
-resize-image/Exif/*.exe
 resize-image/bin/
 resize-image/obj/
 
