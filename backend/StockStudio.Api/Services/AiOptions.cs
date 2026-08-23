@@ -3,7 +3,7 @@ namespace StockStudio.Api.Services;
 /// <summary>Configuration for the AI vision metadata provider (Azure OpenAI or OpenAI).</summary>
 public class AiOptions
 {
-    /// <summary>"stub" (default, no AI), "openai", or "azure".</summary>
+    /// <summary>"stub" (default, no AI), "openai", "azure", or "logicapp".</summary>
     public string Provider { get; set; } = "stub";
 
     /// <summary>API key. Store in user-secrets / env, never in appsettings.</summary>
@@ -39,6 +39,12 @@ public class AiOptions
     public int MaxKeywords { get; set; } = 35;
 
     public double Temperature { get; set; } = 0.4;
+
+    /// <summary>
+    /// Callback address of the 'metadata-generator-001' Logic App, used when Provider is
+    /// "logicapp". It carries its own signature, so it belongs in Key Vault, not in appsettings.
+    /// </summary>
+    public string? GeneratorUrl { get; set; }
 
     /// <summary>
     /// Token budget for the reasoning models, which must cover the thinking that precedes the JSON

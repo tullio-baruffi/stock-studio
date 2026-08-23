@@ -20,6 +20,7 @@ public class AiMetadataProvider : IMetadataProvider
     private readonly AiOptions _opt;
     private readonly IHttpClientFactory _http;
     private readonly MetadataGuidance _guidance;
+    private readonly MetadataNormalizer _normalizer;
     private readonly ILogger<AiMetadataProvider> _log;
 
     public string Name => $"ai-{_opt.Provider}";
@@ -36,11 +37,13 @@ public class AiMetadataProvider : IMetadataProvider
     }
 
     public AiMetadataProvider(IOptions<AiOptions> opt, IHttpClientFactory http,
-                              MetadataGuidance guidance, ILogger<AiMetadataProvider> log)
+                              MetadataGuidance guidance, MetadataNormalizer normalizer,
+                              ILogger<AiMetadataProvider> log)
     {
         _opt = opt.Value;
         _http = http;
         _guidance = guidance;
+        _normalizer = normalizer;
         _log = log;
     }
 
@@ -206,42 +209,22 @@ public class AiMetadataProvider : IMetadataProvider
         using var md = JsonDocument.Parse(content);
         var root = md.RootElement;
 
-        var title = GetString(root, "title") ?? "Vector Silhouette";
-        var description = GetString(root, "description") ?? title;
-        var category = GetString(root, "category") ?? "Graphic Resources";
-
         var keywords = new List<string>();
         if (root.TryGetProperty("keywords", out var kw))
         {
             if (kw.ValueKind == JsonValueKind.Array)
-                keywords = kw.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => s.Length > 0).ToList();
+                keywords = kw.EnumerateArray().Select(e => e.GetString() ?? "").ToList();
             else if (kw.ValueKind == JsonValueKind.String)
-                keywords = (kw.GetString() ?? "").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
-        }
-        keywords = keywords.Select(k => k.ToLowerInvariant())
-            .Distinct()
-            .ToList();
-
-        // Hard guard rail. The written ban is respected most of the time, and "most of the time"
-        // would still push terms the author rejected onto Adobe Stock and Freepik.
-        var banned = _guidance.BannedKeywords;
-        if (banned.Count > 0)
-        {
-            var block = banned.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            int before = keywords.Count;
-            keywords = keywords.Where(k => !block.Contains(k)).ToList();
-            if (keywords.Count < before)
-                _log.LogInformation("Rimosse {N} keyword vietate dai feedback dell'autore", before - keywords.Count);
+                keywords = (kw.GetString() ?? "").Split(',').ToList();
         }
 
-        // Same reasoning for the guide's own rules: asking politely in the prompt left subjective
-        // adjectives in, dropped the mandatory "graphic", and kept "no people" on pictures of people.
-        var raw = keywords.Count;
-        keywords = AdobeStockRules.Enforce(keywords, title, "vector", _opt.MaxKeywords);
-        if (keywords.Count != raw)
-            _log.LogDebug("Keyword normalizzate secondo la guida Adobe: {Before} -> {After}", raw, keywords.Count);
-
-        return new MetadataResult(title.Trim(), description.Trim(), keywords, category.Trim());
+        // The guard rails live in one place, so they hold whichever provider made the call.
+        return _normalizer.Normalize(
+            GetString(root, "title"),
+            GetString(root, "description"),
+            keywords,
+            GetString(root, "category"),
+            _opt.MaxKeywords);
     }
 
     private static string? GetString(JsonElement e, string name) =>

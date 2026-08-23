@@ -20,9 +20,11 @@ public class JobsController : ControllerBase
     private readonly JobQueue _queue;
     private readonly StockValidator _validator;
     private readonly MetadataFeedbackStore _feedback;
+    private readonly PipelineHandoff _handoff;
 
     public JobsController(PipelineService pipeline, IJobStore store, CsvExporter csv, StockPipelineDispatcher dispatcher,
-                          JobQueue queue, StockValidator validator, MetadataFeedbackStore feedback)
+                          JobQueue queue, StockValidator validator, MetadataFeedbackStore feedback,
+                          PipelineHandoff handoff)
     {
         _pipeline = pipeline;
         _store = store;
@@ -31,6 +33,7 @@ public class JobsController : ControllerBase
         _queue = queue;
         _validator = validator;
         _feedback = feedback;
+        _handoff = handoff;
     }
 
     [HttpPost]
@@ -45,6 +48,53 @@ public class JobsController : ControllerBase
         var job = await _pipeline.CreateJob(inputs, mode ?? "vector", ct);
         await _queue.EnqueueAsync(job.Id, ct);
         return Ok(ToDto(job));
+    }
+
+    /// <summary>
+    /// Hands the uploaded pictures straight to the durable pipeline: the originals go to blob
+    /// storage, one message per picture goes on the queue, and this API is done.
+    ///
+    /// The difference with the endpoint above is where the work happens. There it runs here, on an
+    /// in-memory queue, so the batch stops whenever the site restarts; here it runs in a Function
+    /// driven by a storage queue, so the batch survives a restart, a plan change or the site being
+    /// switched off entirely. Tracing, classification and delivery all continue without this API.
+    /// </summary>
+    [HttpPost("handoff")]
+    [RequestSizeLimit(500_000_000)]
+    public async Task<IActionResult> Handoff([FromForm] List<IFormFile> files, [FromForm] string? mode, CancellationToken ct)
+    {
+        if (files == null || files.Count == 0) return BadRequest("Nessun file caricato.");
+        if (!_handoff.Enabled)
+            return BadRequest("Storage della pipeline non configurato (Pipeline:StorageConnectionString).");
+
+        var accepted = new List<object>();
+        var rejected = new List<object>();
+
+        foreach (var f in files)
+        {
+            try
+            {
+                await using var stream = f.OpenReadStream();
+                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", ct);
+                accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName });
+            }
+            catch (Exception ex)
+            {
+                // One bad file must not sink the whole batch: the rest is already on its way.
+                rejected.Add(new { file = f.FileName, error = ex.Message });
+            }
+        }
+
+        return Ok(new
+        {
+            ok = rejected.Count == 0,
+            accepted = accepted.Count,
+            rejected = rejected.Count,
+            items = accepted,
+            errors = rejected,
+            message = $"{accepted.Count} immagini consegnate alla pipeline. "
+                    + "Da qui in poi procede da sola: puoi chiudere o spegnere l'applicazione.",
+        });
     }
 
     [HttpGet]

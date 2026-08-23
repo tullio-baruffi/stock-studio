@@ -48,6 +48,18 @@ namespace MJ.Classifier.Helpers
 
         public static void UploadFileToSharePoint(SharePointSettings sharePointSettings, MemoryStream memoryStream, string fileName, string folderUrl, string functionDirectory, ILogger log)
         {
+            UploadFileToSharePointWithId(sharePointSettings, memoryStream, fileName, folderUrl, functionDirectory, log);
+        }
+
+        /// <summary>
+        /// Uploads a file and returns the identifiers the pipeline needs to carry on: the list item
+        /// id and the server-relative url. Without them the classification message could not point
+        /// back at the file that was just written.
+        /// </summary>
+        public static (int ItemId, string ServerRelativeUrl) UploadFileToSharePointWithId(
+            SharePointSettings sharePointSettings, MemoryStream memoryStream, string fileName,
+            string folderUrl, string functionDirectory, ILogger log)
+        {
             log.LogInformation($"Input value: Filename: {fileName} - FolderUrl: {folderUrl}");
 
             var certificatePath = Path.GetFullPath(Path.Combine(functionDirectory, sharePointSettings.CertificatePath));
@@ -79,10 +91,13 @@ namespace MJ.Classifier.Helpers
             };
 
             Microsoft.SharePoint.Client.File uploadFile = folder.Files.Add(fileCreationInfo);
-            clientContext.Load(uploadFile);
+            clientContext.Load(uploadFile, f => f.ServerRelativeUrl, f => f.Name);
+            clientContext.Load(uploadFile.ListItemAllFields);
             clientContext.ExecuteQuery();
 
-            log.LogInformation($"File '{fileName}' caricato con successo in SharePoint: {folderUrl}");
+            var itemId = uploadFile.ListItemAllFields.Id;
+            log.LogInformation($"File '{fileName}' caricato con successo in SharePoint: {folderUrl} (item {itemId})");
+            return (itemId, uploadFile.ServerRelativeUrl);
         }
     }
 }

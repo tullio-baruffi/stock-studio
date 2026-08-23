@@ -64,7 +64,10 @@ public class ConfigurationController : ControllerBase
             && !string.IsNullOrWhiteSpace(_pipeline.CertificatePath);
         var callbackProtected = !string.IsNullOrWhiteSpace(_pipeline.CallbackSecret);
         var apiProtected = !string.IsNullOrWhiteSpace(_security.ApiKey);
-        var localMetadataAi = (_ai.Provider is "openai" or "azure") && aiKeyConfigured;
+        // "logicapp" delegates the description to metadata-generator-001, so the metadata is just
+        // as final as the direct call — it simply travels through the Logic App that owns the prompt.
+        var viaGenerator = _ai.Provider is "logicapp" && !string.IsNullOrWhiteSpace(_ai.GeneratorUrl);
+        var localMetadataAi = viaGenerator || ((_ai.Provider is "openai" or "azure") && aiKeyConfigured);
         var tableKind = IsDevelopmentStorage(_tables.ConnectionString)
             ? "Azurite (emulatore locale)"
             : "Azure Table Storage";
@@ -101,8 +104,13 @@ public class ConfigurationController : ControllerBase
                 {
                     Item("Provider", string.IsNullOrWhiteSpace(_ai.Provider) ? "stub" : _ai.Provider, "Ai:Provider"),
                     Item("Motore agentico", _llm.IsConfigured ? "Attivo" : "Fallback deterministico", "Ai:Provider / Endpoint / ApiKey"),
-                    Item("Metadati locali", localMetadataAi ? "AI locale attiva" : "Provvisori locali; definitivi dalla Logic App", "Ai:Provider"),
-                    Item("Modello / deployment", deployment ?? _ai.Model, "Ai:Model / Deployment"),
+                    Item("Metadati",
+                         viaGenerator ? "Logic App metadata-generator-001 (prompt condiviso con la pipeline)"
+                                      : localMetadataAi ? "AI locale attiva"
+                                                        : "Provvisori locali; definitivi dalla Logic App",
+                         "Ai:Provider"),
+                    Item("Generatore metadati", viaGenerator ? "Configurato" : "Non configurato", "Ai:GeneratorUrl"),
+                    Item("Modello / deployment", viaGenerator ? "definito nella Logic App" : (deployment ?? _ai.EffectiveModel), "Ai:Model / VisionModel"),
                     Item("Endpoint", SafeHost(_ai.Endpoint) ?? "predefinito del provider", "Ai:Endpoint"),
                     Item("API key", aiKeyConfigured ? "Configurata" : "Non configurata", "Ai:ApiKey"),
                     Item("Cache risposte agente", $"{_agentCache.Ttl.TotalHours:0.##} ore", "Ai:CacheHours"),
@@ -176,6 +184,9 @@ public class ConfigurationController : ControllerBase
                 Choice("illustrator", "Adobe Illustrator", "Replica Action e preset Illustrator tramite COM + JSX.", _vector.Engine == "illustrator",
                     "Windows, Illustrator installato, Action configurata")),
             Area("Motore AI",
+                Choice("logicapp", "Logic App (consigliato)",
+                    "I metadati arrivano da metadata-generator-001: un solo prompt, condiviso con la pipeline, e nessuna chiave OpenAI da tenere qui.",
+                    _ai.Provider == "logicapp", "Ai:GeneratorUrl"),
                 Choice("stub", "Nessuna AI locale", "Metadati provvisori deterministici; quelli definitivi arrivano dalla Logic App.", _ai.Provider == "stub",
                     "nessun requisito"),
                 Choice("openai", "OpenAI", "Metadati locali e agente opportunità tramite API OpenAI.", _ai.Provider == "openai",

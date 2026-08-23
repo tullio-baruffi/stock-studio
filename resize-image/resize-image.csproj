@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.Azure.WebJobs.Extensions.Storage" Version="5.2.2" />
     <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.2.0" />
     <PackageReference Include="PnP.Framework" Version="1.14.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SSH.NET" Version="2023.0.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
     <PackageReference Include="WinSCP" Version="6.1.2" />
@@ -30,6 +31,15 @@
     </None>
     <None Update="host.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!--
+      potrace traccia le silhouette in SVG/EPS. Vive fuori dai glob predefiniti del progetto,
+      quindi senza questa voce resterebbe fuori dal pacchetto pubblicato e la Function non
+      avrebbe nulla da eseguire.
+    -->
+    <None Include="tools\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
     <None Update="local.settings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -45,12 +45,19 @@ builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.AddHttpClient();
 
-// Metadata: in "hook into pipeline" mode the AI title/keywords are produced asynchronously by the
-// existing Azure Logic App. The local provider only supplies a provisional suggestion for the UI.
-// Set Ai:Provider=openai|azure (+ key in user-secrets) to also generate metadata locally.
+// Metadata: the description can come from three places. "logicapp" delegates to the
+// metadata-generator-001 Logic App, which is where the prompt now lives — one copy instead of the
+// two that had already drifted apart. "openai"/"azure" still call the model directly, kept as a
+// fallback. Anything else leaves the stub, so a local run needs no credentials at all.
 var aiProvider = (builder.Configuration["Ai:Provider"] ?? "stub").ToLowerInvariant();
 var aiKey = builder.Configuration["Ai:ApiKey"];
-if ((aiProvider is "openai" or "azure") && !string.IsNullOrWhiteSpace(aiKey))
+var generatorUrl = builder.Configuration["Ai:GeneratorUrl"];
+
+builder.Services.AddSingleton<MetadataNormalizer>();
+
+if (aiProvider == "logicapp" && !string.IsNullOrWhiteSpace(generatorUrl))
+    builder.Services.AddSingleton<IMetadataProvider, LogicAppMetadataProvider>();
+else if ((aiProvider is "openai" or "azure") && !string.IsNullOrWhiteSpace(aiKey))
     builder.Services.AddSingleton<IMetadataProvider, AiMetadataProvider>();
 else
     builder.Services.AddSingleton<IMetadataProvider, StubMetadataProvider>();
@@ -72,6 +79,7 @@ builder.Services.AddOptions<StockStudio.Api.Services.Integration.PipelineSetting
     .ValidateOnStart();
 builder.Services.AddSingleton<StockStudio.Api.Services.Integration.SharePointStore>();
 builder.Services.AddSingleton<StockStudio.Api.Services.Integration.QueueDispatcher>();
+builder.Services.AddSingleton<StockStudio.Api.Services.Integration.PipelineHandoff>();
 builder.Services.AddScoped<StockStudio.Api.Services.Integration.StockPipelineDispatcher>();
 builder.Services.AddSingleton<CsvExporter>();
 builder.Services.AddSingleton<StockValidator>();
