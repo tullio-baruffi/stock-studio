@@ -722,3 +722,12 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 @media (max-width: 720px) {
   .whoami { position: static; margin-top: 10px; justify-content: flex-start; }
 }
+
+/* Le consegne di una stessa immagine, mostrate sulla riga che le rappresenta tutte.
+   Il portatore -- il raster su cui agiscono i pulsanti -- si distingue dagli altri. */
+.bo-kinds { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.bo-kind {
+  font-size: 10px; letter-spacing: .4px; padding: 2px 7px; border-radius: 999px;
+  background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+}
+.bo-kind.carrier { border-color: var(--accent); color: var(--text); }

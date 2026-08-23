@@ -115,8 +115,25 @@ public class BackofficeController : ControllerBase
         try
         {
             var page = _sp.ListItems(library, take, pageToken, search, field);
-            var items = page.Items.Select(i =>
+
+            // Una riga per immagine, non per file. Il percorso durevole deposita SVG, EPS e JPEG
+            // nella stessa cartella: mostrarli come tre elementi indipendenti fa sembrare tre
+            // lavori quello che ne e' uno, e invita a revisionare separatamente metadati che
+            // ormai sono per costruzione gli stessi.
+            //
+            // Il raggruppamento avviene sulla pagina appena letta: un gruppo a cavallo fra due
+            // pagine si vedrebbe spezzato, come si vede spezzato oggi. Non peggiora nulla, e
+            // rileggere la libreria per ricomporlo costerebbe una query per riga.
+            var groups = page.Items
+                .GroupBy(i => FolderOf(i.ServerRelativeUrl), StringComparer.OrdinalIgnoreCase)
+                .SelectMany(g => IsGroupFolder(library, g.Key) ? new[] { g.ToList() } : g.Select(x => new List<SharePointItem> { x }))
+                .ToList();
+
+            var items = groups.Select(group =>
             {
+                // Il portatore e' il raster: e' l'unico che si possa vedere in anteprima e l'unico
+                // che un modello sappia descrivere, quindi e' su di lui che agiscono i pulsanti.
+                var i = group.FirstOrDefault(x => IsRasterImage(x.FileName)) ?? group[0];
                 var kw = SplitTags(i.Tags);
                 var v = _validator.Validate(i.Title, i.Description, kw, "vector");
                 return new
@@ -132,6 +149,15 @@ public class BackofficeController : ControllerBase
                     checkedOutBy = i.CheckedOutBy,
                     modified = i.Modified,
                     previewUrl = $"/api/backoffice/file?w=480&url={Uri.EscapeDataString(i.ServerRelativeUrl)}",
+                    deliverables = group.Count > 1
+                        ? group.OrderBy(d => d.FileName).Select(d => new
+                        {
+                            d.Id,
+                            fileName = d.FileName,
+                            kind = Path.GetExtension(d.FileName).TrimStart('.').ToUpperInvariant(),
+                            carrier = d.Id == i.Id,
+                        }).ToArray()
+                        : null,
                     validation = new
                     {
                         score = v.Score,
@@ -166,6 +192,23 @@ public class BackofficeController : ControllerBase
     private static bool IsThresholdError(Exception ex) =>
         ex.Message.Contains("soglia", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("threshold", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Cartella che contiene il file, come percorso server-relative.</summary>
+    private static string FolderOf(string serverRelativeUrl)
+    {
+        var slash = serverRelativeUrl.LastIndexOf('/');
+        return slash <= 0 ? "" : serverRelativeUrl[..slash];
+    }
+
+    /// <summary>
+    /// True quando la cartella e' una sottocartella della libreria, cioe' un gruppo di consegna.
+    ///
+    /// La radice non e' un gruppo: e' dove arrivano le immagini singole del percorso precedente, e
+    /// trattarla come tale unirebbe l'intera libreria in una riga sola.
+    /// </summary>
+    private bool IsGroupFolder(string library, string folder) =>
+        folder.Length > 0
+        && !string.Equals(folder.TrimEnd('/'), $"{SiteRoot}/{library}", StringComparison.OrdinalIgnoreCase);
 
     [HttpGet("items/{id:int}")]
     public IActionResult Item(int id, [FromQuery] string library)
@@ -359,6 +402,13 @@ public class BackofficeController : ControllerBase
         return parts.Length >= 2 ? parts[^2] : "";
     }
 
+    /// <summary>
+    /// Elimina l'immagine, cioe' tutte le sue consegne.
+    ///
+    /// Una riga del Backoffice rappresenta un gruppo: cancellare il solo portatore lascerebbe SVG
+    /// ed EPS in una cartella che nessuno guarda piu' -- lo stesso orfanaggio che lo spostamento
+    /// produceva prima.
+    /// </summary>
     [HttpDelete("items/{id:int}")]
     public IActionResult Delete(int id, [FromQuery] string library)
     {
@@ -367,8 +417,20 @@ public class BackofficeController : ControllerBase
 
         try
         {
+            var carrier = _sp.GetItem(library, id);
+            var siblings = _sp.GetDeliverableSiblings(library, carrier);
+
             _sp.DeleteItem(library, id);
-            return Ok(new { ok = true });
+            var removed = 1;
+            foreach (var s in siblings)
+            {
+                // Il portatore e' gia' sparito: un fratello che resiste va riferito, non fatto
+                // passare per un'eliminazione riuscita.
+                try { _sp.DeleteItem(library, s.Id); removed++; }
+                catch (Exception ex) { _log.LogWarning(ex, "Consegna non eliminata: {File}", s.FileName); }
+            }
+
+            return Ok(new { ok = true, eliminate = removed, nonEliminate = siblings.Count + 1 - removed });
         }
         catch (Exception ex)
         {

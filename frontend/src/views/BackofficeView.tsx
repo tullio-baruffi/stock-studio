@@ -161,14 +161,20 @@ export default function BackofficeView() {
   };
 
   const remove = async (it: BackofficeItem) => {
-    if (!confirm(`Eliminare definitivamente "${it.fileName}" da ${library}?`)) return;
+    // Una riga puo' rappresentare piu' file: dirlo prima evita che l'autore scopra dopo di aver
+    // cancellato anche il vettoriale che voleva vendere.
+    const extra = it.deliverables?.length ?? 0;
+    const cosa = extra > 1
+      ? `"${it.fileName}" e le altre ${extra - 1} consegne della stessa immagine (${it.deliverables!.map((d) => d.kind).join(", ")})`
+      : `"${it.fileName}"`;
+    if (!confirm(`Eliminare definitivamente ${cosa} da ${library}?`)) return;
     mark(it.id, true);
     try {
       const r = await api.backofficeDelete(library, it.id);
       if (!r.ok) setError(r.error ?? "Eliminazione non riuscita.");
       else {
         setItems((cur) => cur.filter((x) => x.id !== it.id));
-        setNotice(`"${it.fileName}" eliminato.`);
+        setNotice(extra > 1 ? `"${it.fileName}" eliminato con le sue ${extra - 1} consegne.` : `"${it.fileName}" eliminato.`);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -355,6 +361,16 @@ export default function BackofficeView() {
                   </span>
                 </div>
                 <div className="bo-state">{it.stato || "—"}</div>
+                {it.deliverables && it.deliverables.length > 1 && (
+                  <div className="bo-kinds" title={it.deliverables.map((d) => d.fileName).join("\n")}>
+                    {it.deliverables.map((d) => (
+                      <span key={d.id} className={`bo-kind ${d.carrier ? "carrier" : ""}`}>
+                        {d.kind}
+                      </span>
+                    ))}
+                    <span className="muted small">un'unica immagine · i metadati valgono per tutte</span>
+                  </div>
+                )}
                 {locked && (
                   <div className="bo-flag pending">
                     Estratto da {it.checkedOutBy}: SharePoint rifiuta ogni modifica finché non lo archivi.

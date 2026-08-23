@@ -110,6 +110,11 @@ export type BackofficeItem = {
   checkedOutBy?: string;
   modified: string;
   previewUrl: string;
+  /**
+   * The other files of the same image, when it was delivered as a set (SVG + EPS + JPEG).
+   * Absent for a lone file, which is how images arrived before the durable path.
+   */
+  deliverables?: { id: number; fileName: string; kind: string; carrier: boolean }[] | null;
   validation: {
     score: number;
     blocksDispatch: boolean;
