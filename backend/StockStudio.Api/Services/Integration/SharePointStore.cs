@@ -310,13 +310,15 @@ public class SharePointStore
         ctx.Load(items);
         ctx.ExecuteQuery();
 
-        var rows = items
+        var all = items.ToList();
+        var rows = all
             .Where(i => !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
             .Select(ToItem)
             .ToList();
 
         var next = items.ListItemCollectionPosition?.PagingInfo;
-        return new SharePointPage(rows, next == null ? null : "sp:" + next);
+        return new SharePointPage(rows, next == null ? null : "sp:" + next,
+                                  all.Count, all.Count - rows.Count, "cartelle");
     }
 
     private static string BuildWhere(string? search, string? field, string? idCondition)
@@ -356,6 +358,8 @@ public class SharePointStore
         var rows = new List<SharePointItem>();
         var cursor = int.TryParse(pageToken, out var afterId) && afterId > 0 ? afterId : int.MaxValue;
         var more = false;
+        var scanned = 0;
+        var skipped = 0;
 
         // Le cartelle sono elementi di lista e consumano il RowLimit, ma non si vedono: una
         // libreria fatta di sottocartelle per immagine restituiva una riga visibile per pagina.
@@ -390,17 +394,19 @@ public class SharePointStore
             {
                 raw++;
                 cursor = i.Id;
-                if (string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal)) continue;
+                if (string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal)) { skipped++; continue; }
                 rows.Add(ToItem(i));
                 if (rows.Count == wanted) break;
             }
+            scanned += raw;
 
             // Finestra esaurita senza arrivare in fondo: c'e' altro piu' sotto, si continua.
             more = rows.Count == wanted || raw == fetch;
             if (raw < fetch) break;
         }
 
-        return new SharePointPage(rows, more && cursor != int.MaxValue ? cursor.ToString() : null);
+        return new SharePointPage(rows, more && cursor != int.MaxValue ? cursor.ToString() : null,
+                                  scanned, skipped, "piatta");
     }
 
     /// <summary>
@@ -521,25 +527,30 @@ public class SharePointStore
     }
 
     /// <summary>
-    /// Le altre consegne della stessa immagine: tutto cio' che sta nella sua stessa sottocartella.
+    /// Le altre consegne della stessa immagine: i file che stanno nella sua stessa sottocartella e
+    /// portano il suo stesso nome, estensione a parte.
     ///
     /// Il percorso durevole deposita ogni immagine come un insieme -- SVG, EPS e il JPEG -- dentro
     /// una cartella che porta il suo nome. Solo il JPEG puo' essere classificato, perche' un
     /// modello di visione non sa leggere delle curve: la descrizione quindi appartiene al gruppo e
-    /// non a un singolo file, e ogni azione deve trattare la cartella come unita'. Spostare o
-    /// inviare il solo JPEG lascerebbe i vettoriali orfani, senza metadati e senza via d'uscita --
-    /// ed e' proprio il vettoriale quello che si vende.
+    /// non a un singolo file, e ogni azione deve trattare l'insieme come unita'.
     ///
-    /// Un file direttamente nella radice della libreria non fa parte di un insieme: e' cosi' che
-    /// arrivavano le immagini prima, e considerare la radice una cartella renderebbe ogni immagine
-    /// sorella di tutte le altre. Da qui il confronto esplicito con la radice: e' la differenza fra
-    /// un gruppo e l'intera libreria.
+    /// Il nome conta quanto la cartella. Definire il gruppo con la sola cartella sembra bastare --
+    /// una cartella per immagine, e' cosi' che le deposita la pipeline -- ma nella libreria storica
+    /// esistono cartelle che ne contengono decine di diverse. Con quella regola una riga sola ne
+    /// rappresentava ventiquattro estranee fra loro: nascoste alla vista, e cancellate insieme se
+    /// si fosse premuto Elimina.
+    ///
+    /// Un file nella radice della libreria non fa gruppo: e' cosi' che arrivavano le immagini
+    /// prima, e considerare la radice una cartella renderebbe sorelle immagini che non c'entrano.
     /// </summary>
     public IReadOnlyList<SharePointItem> GetDeliverableSiblings(string listTitle, SharePointItem carrier)
     {
         var slash = carrier.ServerRelativeUrl.LastIndexOf('/');
         if (slash <= 0) return Array.Empty<SharePointItem>();
         var folder = carrier.ServerRelativeUrl[..slash];
+        var stem = Path.GetFileNameWithoutExtension(carrier.FileName);
+        if (string.IsNullOrWhiteSpace(stem)) return Array.Empty<SharePointItem>();
 
         using var ctx = CreateContext();
         var list = ctx.Web.Lists.GetByTitle(listTitle);
@@ -562,6 +573,8 @@ public class SharePointStore
             .Where(i => i.Id != carrier.Id)
             .Where(i => !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
             .Select(ToItem)
+            .Where(i => string.Equals(Path.GetFileNameWithoutExtension(i.FileName), stem,
+                                      StringComparison.OrdinalIgnoreCase))
             .ToList();
     }
 
@@ -749,4 +762,16 @@ public record SharePointItem(
 
 public record SharePointCheckIn(bool Changed, string Message, SharePointItem Item);
 
-public record SharePointPage(IReadOnlyList<SharePointItem> Items, string? NextPageToken);
+/// <summary>
+/// Una pagina di elementi, piu' cosa e' costata leggerla.
+///
+/// Scanned e Skipped non servono a chi guarda il Backoffice ma a chi deve capire perche' una
+/// pagina torna mezza vuota: dicono quante righe SharePoint ha restituito davvero e quante ne sono
+/// state scartate perche' non erano file. Senza, l'unico modo di indagare e' indovinare.
+/// </summary>
+public record SharePointPage(
+    IReadOnlyList<SharePointItem> Items,
+    string? NextPageToken,
+    int Scanned = 0,
+    int Skipped = 0,
+    string Strategy = "");

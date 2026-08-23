@@ -117,16 +117,23 @@ public class BackofficeController : ControllerBase
             var page = _sp.ListItems(library, take, pageToken, search, field);
 
             // Una riga per immagine, non per file. Il percorso durevole deposita SVG, EPS e JPEG
-            // nella stessa cartella: mostrarli come tre elementi indipendenti fa sembrare tre
-            // lavori quello che ne e' uno, e invita a revisionare separatamente metadati che
-            // ormai sono per costruzione gli stessi.
+            // nella stessa cartella e con lo stesso nome: mostrarli come tre elementi indipendenti
+            // fa sembrare tre lavori quello che ne e' uno.
+            //
+            // Il gruppo e' cartella *e* nome. La sola cartella non basta: nella libreria storica ce
+            // ne sono che contengono decine di immagini diverse, e raggruppare per cartella le
+            // riduceva tutte a una riga sola -- ventitre' immagini sparite dalla vista, e cancellate
+            // insieme alla prima se si fosse premuto Elimina.
             //
             // Il raggruppamento avviene sulla pagina appena letta: un gruppo a cavallo fra due
             // pagine si vedrebbe spezzato, come si vede spezzato oggi. Non peggiora nulla, e
             // rileggere la libreria per ricomporlo costerebbe una query per riga.
             var groups = page.Items
-                .GroupBy(i => FolderOf(i.ServerRelativeUrl), StringComparer.OrdinalIgnoreCase)
-                .SelectMany(g => IsGroupFolder(library, g.Key) ? new[] { g.ToList() } : g.Select(x => new List<SharePointItem> { x }))
+                .GroupBy(i => IsGroupFolder(library, FolderOf(i.ServerRelativeUrl))
+                              ? $"{FolderOf(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}"
+                              : $"solo:{i.Id}",
+                         StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.ToList())
                 .ToList();
 
             var items = groups.Select(group =>
@@ -167,7 +174,18 @@ public class BackofficeController : ControllerBase
                 };
             }).ToList();
 
-            return Ok(new { ok = true, library, label = Stages[library], items, nextPageToken = page.NextPageToken });
+            return Ok(new
+            {
+                ok = true,
+                library,
+                label = Stages[library],
+                items,
+                nextPageToken = page.NextPageToken,
+                // Quanto e' costato comporre questa pagina. Serve a spiegare una pagina mezza
+                // vuota senza doverlo indovinare: righe lette da SharePoint, righe scartate perche'
+                // non erano file, e quale delle due strategie di impaginazione ha risposto.
+                lettura = new { lette = page.Scanned, scartate = page.Skipped, strategia = page.Strategy },
+            });
         }
         catch (Exception ex) when (IsThresholdError(ex))
         {
