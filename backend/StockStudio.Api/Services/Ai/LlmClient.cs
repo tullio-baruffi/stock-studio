@@ -41,8 +41,33 @@ public class LlmClient
     public string Model => _cfg["Ai:AgentModel"] ?? _cfg["Ai:Model"] ?? _cfg["Ai:Deployment"] ?? "gpt-4o-mini";
     private string ApiVersion => _cfg["Ai:ApiVersion"] ?? "2024-08-01-preview";
 
+    /// <summary>
+    /// Dove parla l'agente, che non e' detto sia dove nascono i metadati.
+    ///
+    /// Ai:Provider risponde alla domanda "chi scrive titolo e descrizione", e "logicapp" significa
+    /// che li scrive la Logic App: non che non ci sia un modello da interpellare. L'agente serve a
+    /// un'altra cosa -- le Opportunita' -- vuole il tool calling, e puo' benissimo parlare con
+    /// OpenAI mentre i metadati passano dalla Logic App.
+    ///
+    /// Finche' quel singolo valore governava entrambi, impostare "logicapp" spegneva l'agente con
+    /// la chiave OpenAI configurata e inutilizzata, e la Configurazione dichiarava tutto il gruppo
+    /// "AI e metadati" incompleto quando invece i metadati funzionavano benissimo. Qui il provider
+    /// dell'agente si deduce da cio' che c'e': un endpoint con deployment e' Azure, un endpoint
+    /// soltanto e' un servizio compatibile, una chiave soltanto e' OpenAI.
+    /// </summary>
+    public string AgentProvider
+    {
+        get
+        {
+            if (Provider is "azure" or "openai" or "compatible") return Provider;
+            if (!string.IsNullOrWhiteSpace(Endpoint))
+                return string.IsNullOrWhiteSpace(_cfg["Ai:Deployment"]) ? "compatible" : "azure";
+            return string.IsNullOrWhiteSpace(ApiKey) ? "" : "openai";
+        }
+    }
+
     /// <summary>True when enough configuration exists to attempt a call.</summary>
-    public bool IsConfigured => Provider switch
+    public bool IsConfigured => AgentProvider switch
     {
         "azure" => !string.IsNullOrWhiteSpace(Endpoint) && !string.IsNullOrWhiteSpace(ApiKey)
                    && !string.IsNullOrWhiteSpace(_cfg["Ai:Deployment"]),
@@ -51,7 +76,7 @@ public class LlmClient
         _ => false,
     };
 
-    public string Describe() => Provider switch
+    public string Describe() => AgentProvider switch
     {
         "azure" => $"Azure OpenAI · {_cfg["Ai:Deployment"]} · {Endpoint}",
         "openai" => $"OpenAI · {Model}",
@@ -59,7 +84,7 @@ public class LlmClient
         _ => "non configurato",
     };
 
-    private (string Url, string HeaderName, string HeaderValue) Route() => Provider switch
+    private (string Url, string HeaderName, string HeaderValue) Route() => AgentProvider switch
     {
         "azure" => ($"{Endpoint}/openai/deployments/{_cfg["Ai:Deployment"]}/chat/completions?api-version={ApiVersion}",
                     "api-key", ApiKey!),

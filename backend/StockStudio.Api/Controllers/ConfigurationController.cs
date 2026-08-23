@@ -100,18 +100,29 @@ public class ConfigurationController : ControllerBase
             {
                 key = "ai",
                 title = "AI e metadati",
-                summary = _llm.IsConfigured ? $"Agentica · {_llm.Provider}" : "Agentica non configurata",
-                state = _llm.IsConfigured ? "ok" : "warning",
+                // Il gruppo si chiama "AI e metadati" e la sua funzione principale sono i metadati:
+                // il verdetto deve dipendere da quelli. Prima dipendeva solo dal motore agentico,
+                // che serve alle Opportunita' ed e' un'altra cosa: con i metadati perfettamente
+                // funzionanti via Logic App l'intero gruppo risultava incompleto, il che mandava a
+                // cercare un guasto dove non c'era.
+                summary = viaGenerator ? "Metadati dalla Logic App"
+                          : localMetadataAi ? "Metadati da AI locale"
+                                            : "Metadati non configurati",
+                state = viaGenerator || localMetadataAi ? "ok" : _environment.IsDevelopment() ? "warning" : "off",
                 items = new object[]
                 {
                     Item("Provider", string.IsNullOrWhiteSpace(_ai.Provider) ? "stub" : _ai.Provider, "Ai:Provider"),
-                    Item("Motore agentico", _llm.IsConfigured ? "Attivo" : "Fallback deterministico", "Ai:Provider / Endpoint / ApiKey"),
                     Item("Metadati",
                          viaGenerator ? "Logic App metadata-generator-001 (prompt condiviso con la pipeline)"
                                       : localMetadataAi ? "AI locale attiva"
                                                         : "Provvisori locali; definitivi dalla Logic App",
                          "Ai:Provider"),
                     Item("Generatore metadati", viaGenerator ? "Configurato" : "Non configurato", "Ai:GeneratorUrl"),
+                    // L'agente e' indipendente dai metadati: alimenta le Opportunita' e vuole il
+                    // tool calling. Dirlo qui, invece di lasciarlo decidere sul semaforo del gruppo.
+                    Item("Motore agentico (Opportunità)",
+                         _llm.IsConfigured ? $"Attivo · {_llm.Describe()}" : "Fallback deterministico",
+                         "Ai:ApiKey / Ai:Endpoint / Ai:AgentModel"),
                     Item("Modello / deployment", viaGenerator ? "definito nella Logic App" : (deployment ?? _ai.EffectiveModel), "Ai:Model / VisionModel"),
                     Item("Endpoint", SafeHost(_ai.Endpoint) ?? "predefinito del provider", "Ai:Endpoint"),
                     Item("API key", aiKeyConfigured ? "Configurata" : "Non configurata", "Ai:ApiKey"),
