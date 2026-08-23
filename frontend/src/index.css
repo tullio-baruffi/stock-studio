@@ -669,15 +669,6 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
   .cfg-value dd { align-items: flex-start; text-align: left; }
 }
 
-/* API key gate */
-.apikey-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
-  background: rgba(0,0,0,.72); backdrop-filter: blur(3px); }
-.apikey-gate form { width: min(520px, 92vw); display: grid; gap: 10px; padding: 22px 24px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
-.apikey-gate h2 { margin: 0; font-size: 19px; }
-.apikey-gate p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
-.apikey-gate input { width: 100%; }
-.apikey-gate small { font-size: 11px; line-height: 1.5; word-break: break-all; }
 /* Nota esplicativa di un'area di configurazione */
 .cfg-area-note { margin: -2px 0 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5;
   color: var(--muted); background: var(--panel2); border-left: 3px solid var(--border);
@@ -718,3 +709,16 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 .batch-head .counts .err { color: var(--err); }
 .batch-caret { margin-left: auto; color: var(--muted); }
 .batch-body { padding: 4px 14px 14px; border-top: 1px solid var(--border); }
+
+/* Identita' e uscita, in alto a destra nell'intestazione.
+   In posizione assoluta per non spostare di un pixel il blocco marchio/sottotitolo che c'era gia'. */
+.topbar { position: relative; }
+.whoami { position: absolute; top: 22px; right: 0; display: flex; align-items: center; gap: 10px; }
+.whoami-name {
+  font-size: 12px; color: var(--muted); max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.whoami .btn { text-decoration: none; }
+@media (max-width: 720px) {
+  .whoami { position: static; margin-top: 10px; justify-content: flex-start; }
+}

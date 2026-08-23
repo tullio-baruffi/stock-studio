@@ -1,0 +1,41 @@
+{
+  "properties": {
+    "platform": {
+      "enabled": true,
+      "runtimeVersion": "~1"
+    },
+    "globalValidation": {
+      "requireAuthentication": true,
+      "unauthenticatedClientAction": "RedirectToLoginPage",
+      "redirectToProvider": "azureactivedirectory",
+      "excludedPaths": ["/api/pipeline/callback"]
+    },
+    "identityProviders": {
+      "azureActiveDirectory": {
+        "enabled": true,
+        "registration": {
+          "openIdIssuer": "https://login.microsoftonline.com/37946ae8-fd7b-41b6-adb8-451db16288ed/v2.0",
+          "clientId": "16b9c79e-d8d4-4b5a-b114-bb9d7ed27cb2",
+          "clientSecretSettingName": "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+        },
+        "validation": {
+          "allowedAudiences": ["16b9c79e-d8d4-4b5a-b114-bb9d7ed27cb2"]
+        },
+        "login": {
+          "loginParameters": ["prompt=select_account"]
+        }
+      }
+    },
+    "login": {
+      "tokenStore": {
+        "enabled": true
+      }
+    },
+    "httpSettings": {
+      "requireHttps": true,
+      "forwardProxy": {
+        "convention": "NoProxy"
+      }
+    }
+  }
+}

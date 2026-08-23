@@ -2,8 +2,12 @@ import { useEffect, useState } from "react";
 import { fetchBlobUrl } from "../api";
 
 /**
- * Image that loads through fetch so the API key travels in the header. A plain <img src> could
- * only carry the key as a query parameter, which would leak it into browser history and logs.
+ * Image that loads through fetch rather than a plain <img src>.
+ *
+ * It used to be about the API key, which only a header could carry. Now the sign-in cookie travels
+ * on its own and a plain tag would work — but the reason to keep this is the queue behind
+ * fetchBlobUrl: a grid of 24 cards would otherwise open 24 parallel SharePoint downloads and
+ * exhaust the free-tier worker.
  */
 export default function AuthImage({ src, alt }: { src: string; alt: string }) {
   const [url, setUrl] = useState<string | null>(null);

@@ -8,7 +8,7 @@ import TrendsView from "./views/TrendsView";
 import GuideView from "./views/GuideView";
 import ConfigurationView from "./views/ConfigurationView";
 import BackofficeView from "./views/BackofficeView";
-import ApiKeyGate from "./components/ApiKeyGate";
+import SignedInAs from "./components/SignedInAs";
 
 type Tab = "upload" | "monitor" | "system" | "configuration" | "pipeline" | "trends" | "guide" | "backoffice";
 
@@ -73,7 +73,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <ApiKeyGate onUnlocked={() => window.location.reload()} />
       <header className="topbar">
         <div className="brand"><span className="logo">▲</span> Stock Vector Studio</div>
         <div className="sub">JPEG → vettoriale + titolo/keyword → CSV Adobe Stock &amp; Freepik</div>
@@ -84,6 +83,7 @@ export default function App() {
               : "Pipeline non configurata (modalità autonoma)"}
           </div>
         )}
+        <SignedInAs />
       </header>
 
       {showReminder && (

@@ -179,7 +179,7 @@
 
   <!-- Security bar: isolated, no crossing lines -->
   <rect x="370" y="705" width="1010" height="38" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
-  <text x="395" y="729" class="small">Sicurezza: API key opzionale · CORS · User Secrets / variabili ambiente / Key Vault · download autenticati via header</text>
+  <text x="395" y="729" class="small">Sicurezza: App Service authentication (Entra ID, tenant cosdh) · Key Vault / variabili ambiente · una sola origine, nessun CORS</text>
 
   <!-- ============================================================= -->
   <!-- LANE 3: AZURE PIPELINE -->

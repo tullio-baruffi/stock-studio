@@ -18,7 +18,6 @@ public class ConfigurationController : ControllerBase
     private readonly AiOptions _ai;
     private readonly TableOptions _tables;
     private readonly PipelineSettings _pipeline;
-    private readonly SecurityOptions _security;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
     private readonly QueueDispatcher _queue;
@@ -30,7 +29,6 @@ public class ConfigurationController : ControllerBase
         IOptions<AiOptions> ai,
         IOptions<TableOptions> tables,
         IOptions<PipelineSettings> pipeline,
-        IOptions<SecurityOptions> security,
         IConfiguration configuration,
         IWebHostEnvironment environment,
         QueueDispatcher queue,
@@ -41,7 +39,6 @@ public class ConfigurationController : ControllerBase
         _ai = ai.Value;
         _tables = tables.Value;
         _pipeline = pipeline.Value;
-        _security = security.Value;
         _configuration = configuration;
         _environment = environment;
         _queue = queue;
@@ -55,15 +52,20 @@ public class ConfigurationController : ControllerBase
         var aiKeyConfigured = !string.IsNullOrWhiteSpace(_configuration["Ai:ApiKey"]);
         var deployment = _configuration["Ai:Deployment"];
         var keyVaultUri = _configuration["KeyVault:Uri"];
-        var corsOrigins = _configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-                          ?? new[] { "http://localhost:5173" };
         var sharePointConfigured =
             !string.IsNullOrWhiteSpace(_pipeline.SiteUrl)
             && !string.IsNullOrWhiteSpace(_pipeline.ClientId)
             && !string.IsNullOrWhiteSpace(_pipeline.Tenant)
             && !string.IsNullOrWhiteSpace(_pipeline.CertificatePath);
         var callbackProtected = !string.IsNullOrWhiteSpace(_pipeline.CallbackSecret);
-        var apiProtected = !string.IsNullOrWhiteSpace(_security.ApiKey);
+
+        // App Service authentication runs in front of this process, so the honest way to report it
+        // is to look at what it actually did to this request: an authenticated caller arrives with
+        // a principal header that nothing downstream can forge, because the platform strips any
+        // incoming copy of it before the request reaches us.
+        var signedInAs = Request.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].ToString();
+        var authEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("WEBSITE_AUTH_ENABLED"), "True", StringComparison.OrdinalIgnoreCase);
         // "logicapp" delegates the description to metadata-generator-001, so the metadata is just
         // as final as the direct call — it simply travels through the Logic App that owns the prompt.
         var viaGenerator = _ai.Provider is "logicapp" && !string.IsNullOrWhiteSpace(_ai.GeneratorUrl);
@@ -156,15 +158,19 @@ public class ConfigurationController : ControllerBase
             {
                 key = "security",
                 title = "Sicurezza e runtime",
-                summary = apiProtected ? "API protetta" : "API key disattivata",
-                state = apiProtected ? "ok" : _environment.IsDevelopment() ? "warning" : "off",
+                summary = authEnabled ? "Accesso con account aziendale" : "Nessuna autenticazione",
+                state = authEnabled ? "ok" : _environment.IsDevelopment() ? "warning" : "off",
                 items = new object[]
                 {
                     Item("Ambiente", _environment.EnvironmentName, "ASPNETCORE_ENVIRONMENT"),
-                    Item("API key", apiProtected ? "Configurata" : "Non configurata", "Security:ApiKey"),
+                    Item("Autenticazione",
+                         authEnabled ? "App Service authentication (Entra ID)" : "Disattivata",
+                         "authsettingsV2"),
+                    Item("Utente corrente",
+                         string.IsNullOrWhiteSpace(signedInAs) ? "anonimo" : signedInAs,
+                         "X-MS-CLIENT-PRINCIPAL-NAME"),
                     Item("Callback pipeline", callbackProtected ? "Protetta" : "Non protetta", "Pipeline:CallbackSecret"),
                     Item("Key Vault", string.IsNullOrWhiteSpace(keyVaultUri) ? "Non configurato" : $"Attivo · {SafeHost(keyVaultUri)}", "KeyVault:Uri"),
-                    Item("CORS", string.Join(", ", corsOrigins), "Cors:AllowedOrigins"),
                 },
             },
         };

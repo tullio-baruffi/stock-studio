@@ -15,17 +15,18 @@
 
 .EXAMPLE
     .\verify-ai.ps1
-    .\verify-ai.ps1 -BaseUrl http://127.0.0.1:5080 -ApiKey "<Security:ApiKey se attiva>"
+    .\verify-ai.ps1 -BaseUrl http://127.0.0.1:5080
 #>
 [CmdletBinding()]
 param(
-    [string]$BaseUrl = 'http://127.0.0.1:5080',
-    [string]$ApiKey
+    [string]$BaseUrl = 'http://127.0.0.1:5080'
 )
 
 $ErrorActionPreference = 'Stop'
+# Nessun header di autenticazione: in locale non c'e' niente davanti all'app, e in Azure
+# l'autenticazione di App Service vuole una sessione di browser, non un header che si possa
+# passare da riga di comando. Questo script si usa quindi contro un'istanza locale.
 $headers = @{}
-if ($ApiKey) { $headers['X-Api-Key'] = $ApiKey }
 $script:agenticExpected = $false
 
 function Step([string]$name, [scriptblock]$action) {

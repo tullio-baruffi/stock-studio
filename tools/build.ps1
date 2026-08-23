@@ -77,8 +77,8 @@ if ($Restart -or ($wasRunning -and $Restart)) {
             Invoke-RestMethod "http://127.0.0.1:$Port/api/health" -TimeoutSec 3 | Out-Null
             $up = $true; break
         } catch {
-            # A 401 means the app is up and enforcing Security:ApiKey, which is still "running".
-            if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 401) { $up = $true; break }
+            # In locale non c'e' autenticazione davanti: quella di App Service vive solo in Azure,
+            # quindi qui una risposta e' una risposta e un errore e' davvero un backend non pronto.
         }
     }
     if ($up) { Write-Host "Backend attivo su http://127.0.0.1:$Port" -ForegroundColor Green }

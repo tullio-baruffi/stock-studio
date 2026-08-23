@@ -177,7 +177,7 @@ export default function BackofficeView() {
     }
   };
 
-  /** Opens the full-size original. Fetched as a blob so the API key stays in the header. */
+  /** Opens the full-size original, fetched through the shared preview queue rather than directly. */
   const openOriginal = async (it: BackofficeItem) => {
     try {
       const url = await fetchBlobUrl(it.previewUrl.replace("w=480&", ""));

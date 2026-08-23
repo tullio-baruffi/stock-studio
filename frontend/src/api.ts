@@ -274,11 +274,9 @@ export type TrackStage = { stage: string; label: string; found: boolean; modifie
 export type TrackResult = { ok: boolean; name?: string; stages?: TrackStage[]; error?: string };
 
 async function throwResponseError(res: Response): Promise<never> {
-  if (res.status === 401) {
-    // No window.prompt here: ApiKeyGate owns collecting the key, and a native prompt fired from
-    // any in-flight request would stack on top of it (and cannot validate what it receives).
-    throw new Error("API key richiesta o non valida.");
-  }
+  // App Service authentication normally answers an expired session with its redirect page rather
+  // than a 401, but a stale token on an XHR can still land here: either way the cure is a sign-in.
+  if (res.status === 401 || res.status === 403) redirectToLogin();
   if (!res.ok) {
     let detail = "";
     try {
@@ -308,14 +306,29 @@ export function apiUrl(path: string): string {
   return API_BASE + path;
 }
 
-/** Adds the stored API key (used only when the server has Security:ApiKey configured). */
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const key = localStorage.getItem("apiKey");
-  return key ? { ...extra, "X-Api-Key": key } : extra;
+/**
+ * Sends the browser through the App Service sign-in and back to where it was.
+ *
+ * There is no login form of our own to show: authentication happens in front of the application,
+ * at the platform, so the only thing the code can do about a missing session is step aside.
+ */
+function redirectToLogin(): never {
+  const back = encodeURIComponent(location.pathname + location.search + location.hash);
+  location.assign(`/.auth/login/aad?post_login_redirect_uri=${back}`);
+  throw new Error("Sessione scaduta: ti riporto all'accesso.");
 }
 
-/** fetch wrapper that carries the API key when one is configured. */
-function f(url: string, init: RequestInit = {}): Promise<Response> {
+/**
+ * fetch wrapper with a timeout, a cancellable signal, and one guard.
+ *
+ * The guard is for expired sessions, which never arrive as a 401. App Service authentication
+ * answers them with a redirect to the sign-in page, and a redirect is the one thing a fetch must
+ * not follow: the browser would chase it to login.microsoftonline.com, be stopped by CORS, and the
+ * view would report "Failed to fetch" for what is really an expired session. So redirects are kept
+ * manual and read as the sign-out they are. The HTML check behind it covers the variant where the
+ * platform answers 200 with its "redirecting to login" page instead of a 302.
+ */
+async function f(url: string, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
@@ -327,11 +340,14 @@ function f(url: string, init: RequestInit = {}): Promise<Response> {
     else external.addEventListener("abort", () => controller.abort(), { once: true });
   }
 
-  return fetch(apiUrl(url), {
-    ...init,
-    signal: controller.signal,
-    headers: authHeaders((init.headers as Record<string, string>) ?? {}),
-  }).finally(() => window.clearTimeout(timeout));
+  try {
+    const res = await fetch(apiUrl(url), { ...init, signal: controller.signal, redirect: "manual" });
+    if (res.type === "opaqueredirect" || res.status === 0) redirectToLogin();
+    if ((res.headers.get("content-type") ?? "").includes("text/html")) redirectToLogin();
+    return res;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 /**
@@ -375,7 +391,8 @@ export async function fetchBlobUrl(url: string, signal?: AbortSignal): Promise<s
   }
 }
 
-/** Downloads a protected file without putting the API key in URL history or server query logs. */export async function downloadFile(url: string, fallbackName: string): Promise<void> {
+/** Downloads a file through the same session as the rest of the app, then hands it to the browser. */
+export async function downloadFile(url: string, fallbackName: string): Promise<void> {
   const response = await f(url);
   if (!response.ok) await throwResponseError(response);
 

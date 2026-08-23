@@ -42,7 +42,6 @@ if (vecEngine == "illustrator")
 else
     builder.Services.AddSingleton<IVectorizer, OpenSourceVectorizer>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
-builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
 builder.Services.AddHttpClient();
 
 // Metadata: the description can come from three places. "logicapp" delegates to the
@@ -105,11 +104,6 @@ builder.Services.Configure<PlanOptions>(builder.Configuration.GetSection("Plan")
 builder.Services.AddSingleton<AppServicePlanScaler>();
 builder.Services.AddHostedService<PlanGuardService>();
 
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-                  ?? new[] { "http://localhost:5173" };
-builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
-
 var app = builder.Build();
 
 // On App Service the writable, persistent location is %HOME%\data; the deployment folder itself is
@@ -124,15 +118,18 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    // The API key travels in a header: without TLS it would cross the wire in clear.
+    // The sign-in cookie must never cross the wire in clear, and neither must the SharePoint data
+    // the pages carry.
     app.UseHsts();
     app.UseHttpsRedirection();
 }
 
-app.UseCors();
-
-// Optional API key gate (no-op unless Security:ApiKey is configured).
-app.UseMiddleware<ApiKeyMiddleware>();
+// No CORS policy and no API key gate here on purpose. The SPA is served from this same origin
+// (see UseDefaultFiles below), so there is no cross-origin request to allow; and authentication
+// happens in front of the application, in App Service authentication, which admits only signed-in
+// users of the cosdh tenant before a request ever reaches this code. The only route it lets
+// through unauthenticated is /api/pipeline/callback, which carries its own shared secret and
+// checks it in PipelineController.
 
 var contentTypes = new FileExtensionContentTypeProvider();
 contentTypes.Mappings[".svg"] = "image/svg+xml";
@@ -146,8 +143,9 @@ app.UseStaticFiles(new StaticFileOptions
     ContentTypeProvider = contentTypes,
 });
 
-// The compiled SPA, when one has been published into wwwroot. Serving it from the same origin
-// removes the need for CORS and keeps the API key on a single host.
+// The compiled SPA, published into wwwroot alongside this API. Serving both from one origin is
+// what lets App Service authentication protect them with a single sign-in cookie: the browser
+// attaches it to every /api call by itself, so the frontend never handles a token or a key.
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
