@@ -314,7 +314,9 @@ public class BackofficeController : ControllerBase
         catch (Exception ex)
         {
             _log.LogError(ex, "Rigenerazione non riuscita per {Library}/{Id}", library, id);
-            return Ok(new RegenerateResult(false, id, "", ex.Message));
+            // Il nome va recuperato qui: senza, l'errore compare accanto a una riga vuota e non si
+            // capisce a quale file si riferisca.
+            return Ok(new RegenerateResult(false, id, SafeFileName(library, id), ex.Message));
         }
     }
 
@@ -343,7 +345,7 @@ public class BackofficeController : ControllerBase
             catch (Exception ex)
             {
                 _log.LogWarning(ex, "Rigenerazione saltata per {Library}/{Id}", library, id);
-                results.Add(new RegenerateResult(false, id, "", ex.Message));
+                results.Add(new RegenerateResult(false, id, SafeFileName(library, id), ex.Message));
             }
         }
 
@@ -356,9 +358,40 @@ public class BackofficeController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Nome del file per i messaggi d'errore, o stringa vuota se nemmeno quello si riesce a
+    /// leggere. Non deve mai far fallire la gestione di un errore che sta gia' accadendo.
+    /// </summary>
+    private string SafeFileName(string library, int id)
+    {
+        try { return _sp.GetItem(library, id).FileName; }
+        catch { return ""; }
+    }
+
+    /// <summary>
+    /// True when the file carries pixels a vision model can actually read.
+    ///
+    /// Deliberately a whitelist rather than a list of things to exclude: an unknown extension is
+    /// far more likely to be another format nobody can decode than a raster one, and guessing wrong
+    /// costs a paid call that fails.
+    /// </summary>
+    private static bool IsRasterImage(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant()
+            is ".jpg" or ".jpeg" or ".png" or ".webp" or ".tif" or ".tiff" or ".bmp" or ".gif";
+
     private async Task<RegenerateResult> RegenerateOneAsync(string library, int id, CancellationToken ct)
     {
         var item = _sp.GetItem(library, id);
+
+        // A vector deliverable has nothing a vision model can read: SVG and EPS describe curves,
+        // not pixels. Asking anyway costs a download and returns the decoder's own complaint
+        // ("Image cannot be loaded. Available decoders: ...") which tells the author nothing about
+        // what to do. The metadata for the set belongs to its JPEG, and the pipeline writes it
+        // there; this file inherits it when the deliverables are sent.
+        if (!IsRasterImage(item.FileName))
+            return new RegenerateResult(false, id, item.FileName,
+                $"{Path.GetExtension(item.FileName).TrimStart('.').ToUpperInvariant()} è un file vettoriale: " +
+                "non contiene pixel da descrivere. Rigenera i metadati dal JPG dello stesso gruppo.");
 
         // Once the pipeline has taken the file, rewriting SharePoint metadata would not reach the
         // marketplaces: the EXIF was already written from the values in force at that moment.

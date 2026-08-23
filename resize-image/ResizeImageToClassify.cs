@@ -38,6 +38,21 @@ namespace MJ.Classifier
         /// <summary>JPEG quality for that copy: enough for a description, small enough to be cheap.</summary>
         const long VisionJpegQuality = 82L;
 
+        /// <summary>
+        /// Estensioni che un modello di visione sa davvero leggere.
+        ///
+        /// Serve perche' nella libreria non arrivano solo fotografie: la vettorializzazione deposita
+        /// accanto al JPG anche l'SVG e l'EPS, e il poller di SharePoint li raccoglie tutti e tre.
+        /// Un vettoriale descrive curve, non pixel: mandarlo avanti significa caricarlo intero nel
+        /// blob pubblico e far fallire la generazione dei metadati con l'elenco dei decoder
+        /// disponibili, un messaggio che non dice nulla a chi lo legge.
+        ///
+        /// Elenco di cio' che si accetta e non di cio' che si scarta: un'estensione sconosciuta e'
+        /// molto piu' probabilmente un altro formato illeggibile che non un raster inatteso.
+        /// </summary>
+        static readonly string[] RasterExtensions =
+            { ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", ".gif" };
+
         private readonly SharePointSettings _sharePointSettings;
 
         public ResizeImageToClassify(
@@ -68,6 +83,21 @@ namespace MJ.Classifier
                     ?? throw new InvalidDataException("Queue message is empty or invalid.");
                 if (string.IsNullOrWhiteSpace(message.ServerRelativeUrl))
                     throw new InvalidDataException("Queue message is missing ServerRelativeUrl.");
+
+                // Si esce prima di scaricare: un vettoriale non ha nulla da classificare, e
+                // proseguire vorrebbe dire copiarlo nel blob pubblico e far fallire la generazione
+                // dei metadati piu' avanti, dove l'errore non si capisce piu' da dove viene.
+                // Non e' un fallimento: il file e' arrivato dove doveva, semplicemente non e' lui a
+                // portare la descrizione del gruppo.
+                var name = message.BlobName ?? System.IO.Path.GetFileName(message.ServerRelativeUrl);
+                var ext = System.IO.Path.GetExtension(name ?? "").ToLowerInvariant();
+                if (Array.IndexOf(RasterExtensions, ext) < 0)
+                {
+                    log.LogInformation(
+                        $"{name}: non e' un'immagine raster ({(ext.Length > 0 ? ext : "senza estensione")}), " +
+                        "niente da classificare. La descrizione del gruppo la porta il JPG.");
+                    return;
+                }
 
                 log.LogInformation($"Get image to resize: blobPath {message.PathBlob}");
                 using var memoryStream = SharePointHelper.GetFileFromSharePoint(_sharePointSettings, message.ServerRelativeUrl, context.FunctionDirectory, log);
