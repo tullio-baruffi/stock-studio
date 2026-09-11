@@ -20,11 +20,16 @@ namespace MJ.Classifier.Helpers
             var workingPath = Path.Combine(Path.GetTempPath(), tempDirectory);
             log.LogDebug($"{data.ServerRelativeUrl} - Working path: {workingPath}");
 
-            // The image handle must be released as soon as the format is known: keeping it open
-            // leaked a GDI+ handle for every processed picture inside the Function host.
-            string extension;
-            using (var image = Image.FromStream(fileAsStream))
+            // GDI+ decodes raster formats only. Handing it a vector threw "Parameter is not
+            // valid." and killed the publication before a single byte was uploaded, which is why
+            // no SVG and no EPS ever reached the stock sites. The extension is needed just to name
+            // the temporary file, and a vector already carries it in its own name.
+            var extension = VectorExtension(data.ServerRelativeUrl);
+            if (extension == null)
             {
+                // The image handle must be released as soon as the format is known: keeping it open
+                // leaked a GDI+ handle for every processed picture inside the Function host.
+                using var image = Image.FromStream(fileAsStream);
                 extension = image.ExtensionFromImageType();
             }
             log.LogDebug($"{data.ServerRelativeUrl} - Extension: {extension}");
@@ -60,6 +65,20 @@ namespace MJ.Classifier.Helpers
                     log.LogWarning(cleanupEx, $"{data.ServerRelativeUrl} - Temp directory not removed: {workingPath}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Formats System.Drawing cannot open. For these the extension is read from the file name
+        /// rather than from the bytes, so a vector never reaches GDI+ in the first place.
+        /// </summary>
+        private static readonly string[] VectorFormats = { "svg", "eps", "ai", "pdf" };
+
+        private static string VectorExtension(string serverRelativeUrl)
+        {
+            var extension = Path.GetExtension(serverRelativeUrl ?? string.Empty)
+                .TrimStart('.')
+                .ToLowerInvariant();
+            return Array.IndexOf(VectorFormats, extension) >= 0 ? extension : null;
         }
 
         private static void UpdateMetadataProperties(string filePath, UploadToSFTPBody data, string directoryPath, ExiftoolSettings settings, ILogger log)
