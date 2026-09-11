@@ -113,16 +113,20 @@ namespace MJ.Classifier
                     log.LogInformation($"Changing metadata properties to file {data.ServerRelativeUrl}");
                     //using var fileStreamWithExifMetadata = FileHelper.UpdateMetadataProperties(fileAsStream, data);
                     using var fileStreamWithExifMetadata = ExtifToolHelper.UpdateMetadataPropertiesFromStream(fileAsStream, data, _exifSettings, context.FunctionDirectory, log);
-                    UploadToFTP(log, data, fileName, fileStreamWithExifMetadata, context);
+                    var outcomes = UploadToFTP(log, data, fileName, fileStreamWithExifMetadata, context);
 
-                    log.LogInformation($"File {data.ServerRelativeUrl} successfully uploaded file to Image stock sites");
-                    message = $"File {data.ServerRelativeUrl} successfully uploaded file to Image stock sites";
+                    // A file nobody accepted is a failure, and has to be treated as one: it must
+                    // stay in the queue folder and stay retryable instead of being filed as sent.
+                    var summary = DescribeOutcomes(outcomes);
+                    if (outcomes.Count > 0 && outcomes.All(o => !o.Succeeded))
+                        throw new InvalidOperationException(summary);
+
+                    log.LogInformation($"File {data.ServerRelativeUrl} - {summary}");
+                    message = summary;
 
                     log.LogInformation($"File {data.ServerRelativeUrl} updating file to SharePoint");
                     SharePointHelper.UploadFileToSharePoint(_sharePointSettings, fileStreamWithExifMetadata, fileName, folderName, context.FunctionDirectory, log);
                     log.LogInformation($"File {data.ServerRelativeUrl} successfully uploaded file to SharePoint");
-
-                    message = $"File {data.ServerRelativeUrl} successfully uploaded file to SharePoint";
 
                     statusCode = 200;
                 }
@@ -203,20 +207,43 @@ namespace MJ.Classifier
             }
         }
 
-        private void UploadToFTP(ILogger log, UploadToSFTPBody data, string fileName, Stream fileStreamWithExifMetadata, ExecutionContext context)
+        private List<UploadOutcome> UploadToFTP(ILogger log, UploadToSFTPBody data, string fileName, Stream fileStreamWithExifMetadata, ExecutionContext context)
         {
+            var outcomes = new List<UploadOutcome>();
+
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to SFTP");
             _sftpClient.Configure(_sftpSettings, log);
-            _sftpClient.UploadFile(fileStreamWithExifMetadata, fileName);
+            outcomes.AddRange(_sftpClient.UploadFile(fileStreamWithExifMetadata, fileName));
 
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to FTP");
             _ftpClient.Configure(_ftpSettings, log);
-            _ftpClient.UploadFile(fileStreamWithExifMetadata, fileName);
+            outcomes.AddRange(_ftpClient.UploadFile(fileStreamWithExifMetadata, fileName));
 
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to WinSCP SFTP");
             _winscpFtpSettings.ForEach(x => x.FunctionAppDirectory = context.FunctionAppDirectory);
             _winSCPFTPClient.Configure(_winscpFtpSettings, log);
-            _winSCPFTPClient.UploadFile(fileStreamWithExifMetadata, fileName);
+            outcomes.AddRange(_winSCPFTPClient.UploadFile(fileStreamWithExifMetadata, fileName));
+
+            return outcomes;
+        }
+
+        /// <summary>
+        /// Turns the per-destination answers into the sentence that ends up in the Stato column.
+        /// A file that only some marketplaces accepted must say so: "completed" used to be
+        /// written even when every single upload had failed.
+        /// </summary>
+        private static string DescribeOutcomes(List<UploadOutcome> outcomes)
+        {
+            var delivered = outcomes.Where(o => o.Succeeded).Select(o => o.Destination).ToList();
+            var refused = outcomes.Where(o => !o.Succeeded).ToList();
+
+            if (refused.Count == 0)
+                return $"caricato su {string.Join(", ", delivered)}";
+
+            var refusedText = string.Join("; ", refused.Select(r => $"{r.Destination} ({r.Error})"));
+            return delivered.Count == 0
+                ? $"nessuna destinazione ha accettato il file - {refusedText}"
+                : $"PARZIALE - caricato su {string.Join(", ", delivered)}; rifiutato da {refusedText}";
         }
     }
 }

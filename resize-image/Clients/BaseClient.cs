@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -26,16 +27,17 @@ namespace MJ.Classifier.Clients
             Settings = ftpSettings;
         }
 
-        public void UploadFile(Stream fileStream, string fileName)
+        public IReadOnlyList<UploadOutcome> UploadFile(Stream fileStream, string fileName)
         {
             if (Settings == null || Settings.Count == 0)
             {
-                return;
+                return Array.Empty<UploadOutcome>();
             }
 
             // The per-destination copies are made sequentially on purpose: the source stream is
             // shared, so reading it inside the parallel pipeline produced corrupted uploads.
             var uploads = new List<(T Setting, MemoryStream Content)>(Settings.Count);
+            var outcomes = new ConcurrentBag<UploadOutcome>();
             try
             {
                 foreach (var setting in Settings)
@@ -52,15 +54,26 @@ namespace MJ.Classifier.Clients
                     try
                     {
                         UploadFileToSFTP(upload.Setting, upload.Content, fileName);
+                        outcomes.Add(new UploadOutcome { Destination = upload.Setting.Name, Succeeded = true });
                     }
                     catch (Exception e)
                     {
-                        // One failing destination must never stop the others.
+                        // One failing destination must never stop the others, but it must not be
+                        // forgotten either: the outcome travels back to the caller.
                         Log.LogError(e, $"Error uploading file {fileName} to {upload.Setting.Name}: {e.Message}");
                         if (e.InnerException != null)
                         {
                             Log.LogError(e.InnerException, $"Inner exception for file {fileName} to {upload.Setting.Name}: {e.InnerException.Message}");
                         }
+
+                        // The outer message of a transfer library is often a wrapper with no
+                        // information ("See InnerException for more info"): the reason is inside.
+                        outcomes.Add(new UploadOutcome
+                        {
+                            Destination = upload.Setting.Name,
+                            Succeeded = false,
+                            Error = e.InnerException != null ? e.InnerException.Message : e.Message,
+                        });
                     }
                 });
             }
@@ -71,6 +84,8 @@ namespace MJ.Classifier.Clients
                     upload.Content.Dispose();
                 }
             }
+
+            return outcomes.ToList();
         }
 
         protected abstract void UploadFileToSFTP(T settings, Stream fileStream, string fileName);
