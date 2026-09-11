@@ -40,13 +40,13 @@ public class LogicAppMetadataProvider : IMetadataProvider
 
     public async Task<MetadataResult> GenerateAsync(string imagePath, string baseName, CancellationToken ct)
     {
-        using var img = await Image.LoadAsync<Rgb24>(imagePath, ct);
+        using var img = await CaricaImmagine.SuBiancoAsync(imagePath, ct);
         return await DescribeAsync(img, baseName, ct);
     }
 
     public async Task<MetadataResult> GenerateFromBytesAsync(byte[] image, string baseName, CancellationToken ct)
     {
-        using var img = Image.Load<Rgb24>(image);
+        using var img = CaricaImmagine.SuBianco(image);
         return await DescribeAsync(img, baseName, ct);
     }
 

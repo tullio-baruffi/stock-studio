@@ -176,6 +176,112 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 .kpi-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .statline { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
 
+/* Avanzamento del deposito dei punteggi, una riga per libreria. */
+.pg-librerie { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.pg-riga { display: grid; grid-template-columns: 180px 1fr 150px; gap: 12px; align-items: center; }
+.pg-nome { font-size: 13px; }
+.pg-segno { color: var(--muted); font-size: 12px; }
+.pg-riga.fatta .pg-segno { color: var(--ok); }
+.pg-barra { height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; }
+.pg-riempita { height: 100%; background: var(--muted); border-radius: 4px; transition: width .4s ease; }
+.pg-riga.corso .pg-riempita { background: var(--accent, #6aa3ff); }
+.pg-riga.fatta .pg-riempita { background: var(--ok); }
+.pg-riga.rotta .pg-riempita { background: var(--err); }
+.pg-riga.rotta .pg-segno { color: var(--err); }
+.pg-riga.rotta .pg-conto { color: var(--err); }
+.pg-conto { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Bonifica del portfolio già pubblicato. */
+.bo-fasce { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.bo-fascia { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; text-align: center; min-width: 84px; }
+.bo-fascia.debole { border-color: var(--err); }
+.bo-fascia-n { display: block; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bo-fascia-l { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.bo-coda { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.bo-riga { display: grid; grid-template-columns: 108px 1fr; gap: 12px; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 10px; padding: 10px; }
+.bo-riga.bo-azione { border-left-color: var(--err); }
+.bo-riga.bo-fermo { border-left-color: var(--muted); }
+.bo-riga.bo-bene { border-left-color: var(--ok); }
+.bo-riga.bo-presto { border-left-color: var(--accent, #6aa3ff); }
+.bo-mini { width: 108px; height: 108px; border-radius: 6px; background: var(--panel2); overflow: hidden; }
+.bo-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bo-corpo { min-width: 0; }
+.bo-testa { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.bo-consiglio { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+.bo-riga.bo-azione .bo-consiglio { color: var(--err); }
+.bo-riga.bo-bene .bo-consiglio { color: var(--ok); }
+.bo-punteggio { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bo-vendite { font-size: 12px; color: var(--ok); }
+.bo-titolo { margin-top: 4px; font-size: 14px; }
+.bo-perche { margin-top: 6px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.bo-problemi { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+
+/* Consigli: ogni voce porta la sua provenienza, e il colore la ripete a colpo d'occhio. */
+.cs-voce { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; max-width: 860px; }
+.cs-voce.cs-adobe { border-left-color: var(--err); }
+.cs-voce.cs-misurato { border-left-color: var(--accent, #6aa3ff); }
+.cs-voce.cs-scelta { border-left-color: var(--muted); }
+.cs-voce-testa { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.cs-titolo { font-size: 14px; font-weight: 700; }
+.cs-fonte { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.cs-voce.cs-adobe .cs-fonte { color: var(--err); }
+.cs-voce.cs-misurato .cs-fonte { color: var(--accent, #6aa3ff); }
+.cs-corpo { margin-top: 6px; font-size: 13px; line-height: 1.6; color: var(--text, inherit); }
+.cs-url { display: inline-block; margin-top: 8px; font-size: 11px; color: var(--muted); word-break: break-all; }
+.cs-fasce { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.cs-fascia { font-size: 12px; background: var(--panel2); border-radius: 6px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
+.cs-fascia.debole { color: var(--err); }
+.cs-fascia em { color: var(--muted); font-style: normal; font-size: 11px; }
+
+/* Insights: ogni riquadro porta la domanda a cui risponde. */
+.in-griglia { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 12px 0; }
+.in-card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 10px; padding: 14px; }
+.in-card.su { border-left-color: var(--ok); }
+.in-card.giu { border-left-color: var(--err); }
+.in-domanda { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.in-valore { font-size: 24px; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.in-card.su .in-valore { color: var(--ok); }
+.in-card.giu .in-valore { color: var(--err); }
+.in-sotto { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+.in-confronto { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; max-width: 800px; }
+.in-barra-riga { display: grid; grid-template-columns: 150px 1fr 44px; gap: 12px; align-items: center; margin-bottom: 8px; }
+.in-etichetta { font-size: 13px; }
+.in-barra { height: 10px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+.in-riempita { height: 100%; background: var(--muted); border-radius: 5px; transition: width .4s ease; }
+.in-riempita.ok { background: var(--ok); }
+.in-num { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+.in-mesi { display: flex; gap: 6px; align-items: flex-end; height: 130px; margin: 12px 0 8px; }
+.in-mese { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; }
+.in-colonna { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.in-colonna-piena { width: 100%; background: var(--accent, #6aa3ff); border-radius: 3px 3px 0 0; }
+.in-mese-l { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+
+.in-tabella { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-width: 800px; }
+.in-riga { display: grid; grid-template-columns: 1fr 130px 100px 160px; gap: 12px; align-items: baseline;
+           background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+           font-size: 13px; font-variant-numeric: tabular-nums; }
+.in-tipo { font-weight: 600; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.in-avviso { background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--warn, #f0ad4e);
+             border-radius: 8px; padding: 10px 14px; margin: 10px 0; font-size: 12.5px; line-height: 1.6;
+             color: var(--muted); max-width: 900px; }
+.in-avviso strong { color: var(--text, inherit); }
+
+/* Accesso del browser a SharePoint: senza sessione le anteprime restano riquadri vuoti. */
+.sp-accesso { white-space: nowrap; }
+.sp-accesso.presente { opacity: .65; }
+.sp-accesso.presente:hover { opacity: 1; }
+.sp-avviso {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--warn, #f0ad4e);
+  border-radius: 8px; padding: 12px 14px; margin: 0 0 14px; font-size: 12.5px; line-height: 1.6;
+  color: var(--muted);
+}
+.sp-avviso strong { color: var(--text, inherit); }
+.sp-avviso .btn { margin-left: auto; }
+
 /* Funnel */
 .funnel { display: flex; flex-direction: column; gap: 14px; }
 .fstage-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
@@ -383,6 +489,19 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 
 /* Bulk keyword bar */
 .bulkbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+
+/* Un gruppo di scelte alternative: una sola vale alla volta, e si vede quale. */
+.scelte { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+
+/*
+  La scelta attiva si marca da aria-pressed, non da una classe a parte: lo stato che il lettore di
+  schermo annuncia e quello che l'occhio vede restano cosi' la stessa cosa, e non possono divergere.
+  Serve esplicito perche' nella veste "nastro" .btn e .btn.ghost sono dipinti identici: senza
+  questa regola i tre pulsanti si presentavano uguali e la selezione era invisibile.
+*/
+.scelte button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #08080c; font-weight: 700;
+}
 
 /* Job actions */
 .jobactions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -741,3 +860,244 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 }
 .cache-note strong { color: var(--text); }
 .cachechip.fresh { color: var(--ok); }
+
+/* --- Interruttore fra le due vesti --- */
+.exp-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px 4px 8px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-size: 11px; letter-spacing: .4px; text-transform: uppercase;
+}
+.exp-toggle:hover { border-color: var(--accent); color: var(--text); }
+.exp-toggle.on { border-color: #C8F751; color: #C8F751; }
+.exp-lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.exp-toggle.on .exp-lamp { background: #C8F751; box-shadow: 0 0 6px rgba(200,247,81,.7); }
+.whoami { gap: 12px; }
+
+/* --- Revisione a cernita ---
+   Fondo piu' profondo del resto dell'app: qui si giudica il contrasto di una silhouette, e ogni
+   grigio circostante falsa il giudizio. */
+.cernita { display: flex; flex-direction: column; gap: 12px; min-height: 72vh; }
+.cn-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.cn-title { font-size: 12px; letter-spacing: 2px; color: var(--muted); }
+.cn-counts { font-size: 12.5px; color: var(--muted); }
+.cn-counts .ok { color: var(--ok); }
+.cn-counts .err { color: var(--err); }
+.cn-top-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.cn-esito { position: relative; padding: 8px 34px 8px 12px; border-radius: 8px; font-size: 13px;
+  border: 1px solid var(--border); background: var(--panel); }
+.cn-esito.ok { border-color: rgba(46,204,113,.4); color: #c7f5d9; }
+.cn-esito.errore { border-color: rgba(255,91,106,.45); color: #ffd7db; }
+
+.cn-body { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
+.cn-body.zoom { grid-template-columns: 1fr; }
+.cn-body.zoom .cn-side { display: none; }
+
+.cn-stage { position: relative; background: #fff; border-radius: 8px; overflow: hidden;
+  display: grid; place-items: center; min-height: 48vh; padding: 14px; }
+.cn-stage img { max-width: 100%; max-height: 62vh; object-fit: contain; }
+/* Il vettoriale vuole il suo fondo bianco: nero su nero non è un'anteprima, è un riquadro vuoto. */
+.cn-svg { background: #fff; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.cn-svg img { max-width: 100%; max-height: 62vh; object-fit: contain; }
+.cn-stage.segnata { outline: 2px solid var(--err); outline-offset: -2px; }
+.cn-kinds { position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; z-index: 1; }
+.cn-mark { position: absolute; bottom: 0; left: 0; right: 0; padding: 5px;
+  background: rgba(255,91,106,.9); color: #fff; font-size: 11px; text-align: center; }
+
+.cn-side { display: flex; flex-direction: column; gap: 7px; }
+.cn-score { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.cn-score-n { font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.cn-score-l { font-size: 9.5px; letter-spacing: 1px; color: var(--muted); }
+.cn-score.alto .cn-score-n { color: var(--ok); }
+.cn-score.medio .cn-score-n { color: var(--warn); }
+.cn-score.basso .cn-score-n { color: var(--err); }
+.cn-file { font-size: 12px; color: var(--muted); word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.cn-lab { font-size: 10px; letter-spacing: .8px; color: var(--muted); margin-top: 6px; }
+.cn-input { width: 100%; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; font-size: 13px; }
+.cn-input:focus { outline: none; border-color: var(--accent); }
+.cn-issues { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.cn-issues li.error { color: #ffd7db; }
+.cn-state { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+/* Rullino: la selezione lo insegue, cosi' scorrere da tastiera non fa perdere il segno. */
+.cn-roll { display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.rl-frame { flex: 0 0 auto; width: 62px; height: 62px; padding: 0; cursor: pointer;
+  background: #fff; border: 2px solid transparent; border-radius: 6px; overflow: hidden;
+  display: grid; place-items: center; }
+.rl-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rl-frame.on { border-color: #C8F751; transform: scale(1.08); }
+.rl-frame.ko { opacity: .45; border-color: var(--err); }
+
+.cn-keys { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11.5px; color: var(--muted); }
+.cn-keys kbd { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px;
+  padding: 2px 7px; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 5px; color: var(--text); margin-left: 10px; }
+.cn-keys kbd:first-child { margin-left: 0; }
+.cn-keys kbd.hot { border-color: #C8F751; color: #C8F751; }
+.cn-cost { font-size: 11px; opacity: .75; }
+
+/* Galleria: la porta d'ingresso della revisione. La griglia si allarga da sola perche' il numero
+   di colonne utile dipende dallo schermo, non da un valore deciso qui. */
+.gl-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+.gl-card { position: relative; display: flex; flex-direction: column; gap: 5px;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+.gl-card.sel { border-color: #C8F751; box-shadow: 0 0 0 1px #C8F751 inset; }
+.gl-card.ko { opacity: .5; border-color: var(--err); }
+.gl-shot { padding: 0; border: 0; cursor: pointer; background: #fff; border-radius: 6px;
+  overflow: hidden; aspect-ratio: 1; display: grid; place-items: center; }
+.gl-shot img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* La casella sta sopra l'immagine: una colonna sua toglierebbe spazio proprio a cio' che si guarda. */
+.gl-pick { position: absolute; top: 10px; left: 10px; z-index: 2; display: grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 5px; background: rgba(10,10,12,.66); cursor: pointer; }
+.gl-pick input { cursor: pointer; accent-color: #C8F751; }
+.gl-meta { display: flex; align-items: center; gap: 6px; }
+.gl-name { flex: 1; font-size: 11px; color: var(--muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.gl-kinds { display: flex; gap: 4px; flex-wrap: wrap; min-height: 16px; }
+.gl-flag { font-size: 9.5px; letter-spacing: .5px; color: var(--err); text-transform: uppercase; }
+
+.gl-bulk { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; padding: 8px 10px; border: 1px solid #C8F751; border-radius: 8px;
+  background: var(--panel); }
+.gl-bulk-n { font-size: 12.5px; color: #C8F751; }
+.gl-more { display: grid; place-items: center; min-height: 44px; font-size: 12px; color: var(--muted); }
+
+/* Consegne: scegliere quale file dello stesso lavoro si sta guardando. */
+.cn-files { display: flex; gap: 5px; flex-wrap: wrap; }
+/* Lo scarico: piccolo e sempre presente, perché il momento in cui serve è mentre si guarda. */
+.cn-scarica { display: flex; gap: 5px; flex-wrap: wrap; }
+.cn-dl { display: inline-flex; align-items: center; gap: 3px; padding: 4px 9px; font-size: 11px;
+         border: 1px solid var(--border); border-radius: 6px; background: var(--panel2);
+         color: var(--muted); text-decoration: none; white-space: nowrap; }
+.cn-dl:hover { border-color: var(--accent); color: var(--text, #fff); }
+.cn-fbtn { padding: 3px 9px; font-size: 11px; letter-spacing: .5px; cursor: pointer;
+  background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 5px; }
+.cn-fbtn.on { border-color: #C8F751; color: #C8F751; }
+/* Il formato che il browser non sa disegnare: dirlo, invece di lasciare un riquadro vuoto. */
+.cn-nofile { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; min-height: 46vh; padding: 24px; text-align: center; color: #4a4a52; }
+.cn-nofile-k { font-size: 42px; font-weight: 700; letter-spacing: 3px; color: #c9c9d1; }
+.cn-nofile p { margin: 0; font-size: 12.5px; line-height: 1.6; color: #6b6b74; word-break: break-all; }
+.cn-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+/* Vendite: la misura che mancava. Il grafico e' volutamente scarno -- servono le proporzioni
+   fra i mesi, non un cruscotto finanziario. */
+.vend { display: flex; flex-direction: column; gap: 18px; }
+.vend-dove { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; opacity: .85; }
+.vend-due { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.vend-mesi { display: flex; align-items: flex-end; gap: 10px; height: 150px;
+  padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.vend-mese { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  height: 100%; gap: 4px; }
+.vend-barra { width: 100%; max-width: 46px; background: var(--accent); border-radius: 3px 3px 0 0; }
+.vend-cifra { font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums; }
+.vend-etichetta { font-size: 10px; color: var(--muted); }
+.vend-file { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+.vend-tit { color: var(--muted); font-size: 12px; max-width: 420px; }
+/* Un file che non ha mai venduto non e' un errore: e' l'informazione che si e' venuti a cercare. */
+.vend-muto { opacity: .5; }
+
+@media (max-width: 900px) { .vend-due { grid-template-columns: 1fr; } }
+
+/* Le parole che i best seller hanno in piu': la dimensione non varia, varia il rapporto scritto
+   accanto. Una nuvola di tag con corpi diversi si legge peggio di un elenco onesto. */
+.vend-parole { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.vend-parola { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+.vend-parola em { font-style: normal; font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* Strategia: la regola di Adobe accanto ai propri numeri. */
+.strat { display: flex; flex-direction: column; gap: 22px; }
+.strat-sec { display: flex; flex-direction: column; gap: 10px; }
+.strat-cita { margin: 0; padding: 14px 18px; background: var(--panel); border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0; font-size: 13.5px; line-height: 1.65; }
+.strat-cita cite { display: block; margin-top: 10px; font-style: normal; font-size: 11.5px; color: var(--muted); }
+.strat-cons { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.strat-cons article { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.strat-cons h3 { margin: 0 0 6px; font-size: 13px; }
+.strat-cons p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.strat-var td { color: var(--muted); font-weight: 600; }
+.strat-passi { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px;
+  font-size: 13px; line-height: 1.6; }
+.strat-passi strong { color: var(--text); }
+
+/* Affina: gli interventi sul magazzino gia' pubblicato. */
+.aff { display: flex; flex-direction: column; gap: 16px; }
+.aff-sec { display: flex; flex-direction: column; gap: 10px; }
+.aff-lista { display: flex; flex-direction: column; gap: 8px; }
+.aff-riga { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 5px; }
+.aff-file { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+.aff-tit { color: var(--muted); font-size: 12px; }
+.aff-kw { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.aff-eti { font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); min-width: 34px; }
+.aff-eti.buono { color: var(--ok); }
+.aff-tag { font-size: 11.5px; padding: 2px 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; }
+/* Il verde marca la proposta, non un giudizio: l'ordine di prima non era sbagliato, era casuale. */
+.aff-tag.buono { border-color: rgba(46,204,113,.45); }
+.aff-male td { opacity: .75; }
+.aff-male td:first-child { border-left: 2px solid var(--err); padding-left: 8px; }
+
+.aff-diffuse { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.aff-tag em { font-style: normal; font-size: 10px; color: var(--muted); margin-left: 4px; }
+
+/* Filtri della galleria. Agiscono su cio' che e' gia' stato scaricato: il punteggio non esiste in
+   SharePoint, viene calcolato qui, quindi non c'e' modo di chiederlo alla libreria. */
+.cn-filtri { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cn-fascia { display: flex; gap: 4px; }
+.cn-fascia .cn-fbtn em { font-style: normal; margin-left: 5px; opacity: .6; font-size: 10px; }
+.cn-cerca { flex: 1; min-width: 180px; max-width: 320px; background: var(--panel2);
+  border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 12.5px; }
+.cn-cerca:focus { outline: none; border-color: var(--accent); }
+.cn-solo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.cn-solo.on { color: var(--text); }
+.cn-solo input { accent-color: var(--accent); cursor: pointer; }
+
+/* Barra dei comandi del dettaglio: ha preso il posto del rullino. */
+.cn-pos { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 4px; }
+.cn-scorc { display: inline-flex; gap: 4px; margin-left: auto; opacity: .5; }
+.cn-scorc kbd { margin: 0; }
+
+/* Quale dei quattro report si sta guardando. La pillola accesa da sola non bastava: quattro tabelle
+   di temi si somigliano, e senza un titolo non si capisce a quale domanda stiano rispondendo. */
+.tr-quale { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; }
+.tr-quale-n { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.tr-quale-s { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+/* Avviso sul ritardo di indicizzazione della ricerca SharePoint. */
+.cn-avviso { font-size: 12px; color: var(--muted); padding: 8px 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; line-height: 1.5; }
+
+/* Attese. La rotella riusa .trend-spinner, che esisteva gia' per i trend: una sola animazione. */
+.attesa { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--muted); font-size: 13px; }
+.attesa-nota { display: block; font-style: normal; font-size: 11.5px; opacity: .75; margin-top: 2px; }
+
+/* Rotella dentro un pulsante: piu' piccola, e allineata al testo invece che al riquadro. */
+.btn .trend-spinner { width: 11px; height: 11px; border-width: 2px; display: inline-block;
+  vertical-align: -1px; margin-right: 6px; }
+
+/* Il posto che il risultato occupera'. Meglio di una pagina vuota, che sembra un errore. */
+.segnaposto { display: flex; flex-direction: column; gap: 8px; }
+.segnaposto-riga { height: 46px; border-radius: 8px;
+  background: linear-gradient(90deg, var(--panel) 25%, var(--panel2) 50%, var(--panel) 75%);
+  background-size: 200% 100%; animation: seg-onda 1.4s linear infinite; }
+@keyframes seg-onda { to { background-position: -200% 0; } }
+
+/* Una griglia che si allunga: la fascia in fondo dice che sta arrivando altro. */
+.gl-more .trend-spinner { width: 13px; height: 13px; margin-right: 8px; vertical-align: -2px; }
+
+/* Mentre si aspetta, la griglia si spegne un poco: si vede che quello a schermo non e' definitivo. */
+.gl-grid.attende { opacity: .45; pointer-events: none; transition: opacity .15s; }

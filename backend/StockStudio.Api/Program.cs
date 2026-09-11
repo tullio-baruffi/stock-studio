@@ -66,6 +66,11 @@ else
 builder.Services.AddSingleton<StockStudio.Api.Services.Feedback.MetadataFeedbackStore>();
 builder.Services.AddSingleton<StockStudio.Api.Services.Feedback.MetadataGuidance>();
 builder.Services.AddSingleton<StockStudio.Api.Services.Feedback.MetadataPromptTuner>();
+builder.Services.AddSingleton<StockStudio.Api.Services.Feedback.KeywordSaturation>();
+
+// Le vendite arrivano dall'esportazione del portale autori: Adobe non offre nessuna interfaccia
+// programmabile agli autori, quindi questa è l'unica porta d'ingresso possibile.
+builder.Services.AddSingleton<StockStudio.Api.Services.Sales.SalesStore>();
 
 // Integration with the existing Azure pipeline (SharePoint back-office + image-to-classify queue).
 builder.Services.AddOptions<StockStudio.Api.Services.Integration.PipelineSettings>()
@@ -97,6 +102,18 @@ builder.Services.AddSingleton<TrendService>();
 builder.Services.AddSingleton<JobQueue>();
 builder.Services.AddHostedService<JobProcessorService>();
 builder.Services.AddScoped<PipelineService>();
+
+// Il punteggio dei metadati depositato in libreria, così i filtri per punteggio possono valere su
+// tutto il magazzino e non solo sulle immagini già a schermo. Le scritture avvengono qui dietro:
+// vedere la galleria non deve costare ventiquattro scritture su SharePoint.
+builder.Services.AddSingleton<StockStudio.Api.Services.Scoring.Punteggiatore>();
+builder.Services.AddSingleton<StockStudio.Api.Services.Scoring.PunteggioStore>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<StockStudio.Api.Services.Scoring.PunteggioStore>());
+
+// Aggancia le vendite ai file che stanno davvero in libreria, scorrendola per intero una volta
+// ogni ora: senza, i rapporti fra ricavi e magazzino userebbero insiemi diversi ai due lati.
+builder.Services.AddSingleton<StockStudio.Api.Services.Insights.AggancioVendite>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<StockStudio.Api.Services.Insights.AggancioVendite>());
 
 // Self-scaling of the API's own plan. The evening Logic App only ever brings the level back down
 // to F1; this is what climbs before the free tier's daily CPU quota turns every request into a 403.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, fetchBlobUrl, type BackofficeItem } from "../api";
+import { api, type BackofficeItem } from "../api";
 import AuthImage from "../components/AuthImage";
+import { AvvisoSessioneSharePoint } from "../components/AccessoSharePoint";
 
 const STAGES = [
   { library: "ImagesToClassify", label: "Da revisionare", hint: "L'AI ha proposto i metadati: correggili e passali allo stadio successivo." },
@@ -15,6 +16,15 @@ const NEXT_STAGE: Record<string, string> = {
 
 /** Rows per page. Kept here because the pager needs it to work out the position in the library. */
 const PAGE_SIZE = 24;
+
+/**
+ * Se l'immagine ha vettoriali accanto a sé, cioè se c'è qualcosa da ritracciare.
+ *
+ * Un file arrivato da solo, senza SVG né EPS, non è una consegna vettoriale: offrirgli il pulsante
+ * porterebbe soltanto a un errore dopo il clic.
+ */
+const conVettoriali = (i: BackofficeItem) =>
+  (i.deliverables ?? []).some((d) => d.kind === "SVG" || d.kind === "EPS");
 
 /**
  * SharePoint back-office inside the app: the review, approval and clean-up work that previously
@@ -183,16 +193,10 @@ export default function BackofficeView() {
     }
   };
 
-  /** Opens the full-size original, fetched through the shared preview queue rather than directly. */
-  const openOriginal = async (it: BackofficeItem) => {
-    try {
-      const url = await fetchBlobUrl(it.previewUrl.replace("w=480&", ""));
-      window.open(url, "_blank", "noopener");
-      // Give the new tab time to load before releasing the object URL.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  /** Apre l'originale su SharePoint, in una scheda nuova. */
+  const openOriginal = (it: BackofficeItem) => {
+    // Il file sta su SharePoint e chi guarda ha accesso alla libreria: non serve che passi da qui.
+    window.open(it.fileUrl ?? it.previewUrl, "_blank", "noopener");
   };
 
   /**
@@ -239,6 +243,87 @@ export default function BackofficeView() {
     }
   };
 
+  /**
+   * Ritraccia SVG ed EPS di un'immagine già in libreria.
+   *
+   * Diverso dalla rigenerazione dei metadati, che riscrive le parole: qui si riscrive il disegno,
+   * perché il tracciato migliora e le immagini consegnate restano quelle del giorno in cui sono
+   * state lavorate. Non ricarica niente e non tocca titolo o keyword.
+   */
+  const rivettorializza = async (it: BackofficeItem) => {
+    mark(it.id, true);
+    setNotice(null);
+    try {
+      const r = await api.backofficeRivettorializza(library, it.id);
+      if (!r.ok) {
+        setError(r.error ?? "Ritracciamento non riuscito.");
+        return;
+      }
+      const dettaglio = (r.consegne ?? [])
+        .map((c) => `${c.tipo} da ${c.kbPrima} a ${c.kbDopo} KB`)
+        .join(", ");
+      setNotice(
+        `"${it.fileName}": ritracciato ${r.aColori ? "a colori" : "in bianco e nero"}` +
+        (dettaglio ? ` — ${dettaglio}.` : ".") +
+        (r.daRiportare ? " L'immagine è già pubblicata: il file nuovo va ricaricato su Adobe a mano." : "")
+      );
+      // La miniatura mostrata è quella del JPG, che non cambia: a cambiare sono SVG ed EPS, e si
+      // vedono aprendo il dettaglio. Ricaricare la pagina qui servirebbe solo a far perdere il posto.
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      mark(it.id, false);
+    }
+  };
+
+  const rivettorializzaPage = async () => {
+    // Un file estratto rifiuterebbe la riscrittura dopo aver consumato il tracciato: resta fuori.
+    // Un file già pubblicato invece si rifà eccome -- è proprio il caso della bonifica -- e chi lo
+    // fa viene avvisato che su Adobe va ricaricato a mano.
+    const targets = items.filter((i) => !i.checkedOutBy && conVettoriali(i));
+    if (targets.length === 0) return;
+    if (!confirm(
+      `Ritracciare SVG ed EPS di ${targets.length} immagini con il vettorizzatore corrente?\n\n` +
+      `I vettoriali attuali verranno sovrascritti (SharePoint ne conserva le versioni precedenti). ` +
+      `Il JPG e i metadati non vengono toccati.\n\n` +
+      `Ogni immagine richiede una decina di secondi: per ${targets.length} sono circa ` +
+      `${Math.ceil(targets.length / 6)} minuti.`
+    )) return;
+
+    setBulk(true);
+    setError(null);
+
+    // Una richiesta per immagine, non una sola per tutte: un lotto intero supererebbe i 230 secondi
+    // oltre i quali Azure chiude la connessione, e si perderebbe il lavoro a metà senza sapere dove.
+    // Così invece l'avanzamento si vede, e un'immagine che fallisce non ferma le altre.
+    const falliti: string[] = [];
+    let fatti = 0;
+    let pubblicate = 0;
+    try {
+      for (const t of targets) {
+        setNotice(`Ritracciamento ${fatti + 1} di ${targets.length}: ${t.fileName}…`);
+        try {
+          const r = await api.backofficeRivettorializza(library, t.id);
+          if (r.ok) {
+            fatti++;
+            if (r.daRiportare) pubblicate++;
+          } else {
+            falliti.push(`${t.fileName} (${r.error ?? "motivo non riportato"})`);
+          }
+        } catch (e) {
+          falliti.push(`${t.fileName} (${(e as Error).message})`);
+        }
+      }
+      setNotice(
+        `Ritracciate ${fatti} immagini su ${targets.length}.` +
+        (pubblicate ? ` ${pubblicate} sono già su Adobe: vanno ricaricate là a mano.` : "") +
+        (falliti.length ? ` Non riuscite: ${falliti.join("; ")}.` : "")
+      );
+    } finally {
+      setBulk(false);
+    }
+  };
+
   const regeneratePage = async () => {
     // Checked-out files would burn a paid AI call and then fail on the write, so they stay out.
     const targets = items.filter((i) => !i.inviato && !i.checkedOutBy);
@@ -274,6 +359,7 @@ export default function BackofficeView() {
 
   return (
     <div className="backoffice">
+      <AvvisoSessioneSharePoint />
       <div className="cfg-hero">
         <div>
           <h1>Backoffice</h1>
@@ -332,6 +418,21 @@ export default function BackofficeView() {
           </span>
           <button className="btn small" onClick={regeneratePage} disabled={bulk || loading}>
             {bulk ? "Rigenerazione in corso…" : `Rigenera i ${items.filter((i) => !i.inviato && !i.checkedOutBy).length} file di questa pagina`}
+          </button>
+        </div>
+      )}
+
+      {items.some(conVettoriali) && (
+        <div className="bo-bulk">
+          <span>
+            I vettoriali sono quelli prodotti il giorno in cui l'immagine è stata lavorata. Il
+            tracciato nel frattempo è migliorato: puoi rifarli con il vettorizzatore corrente,
+            mantenendo metadati, punteggio e posizione nel flusso. Il JPG non viene toccato.
+          </span>
+          <button className="btn small" onClick={rivettorializzaPage} disabled={bulk || loading}>
+            {bulk
+              ? "Ritracciamento in corso…"
+              : `Ritraccia le ${items.filter((i) => !i.checkedOutBy && conVettoriali(i)).length} immagini di questa pagina`}
           </button>
         </div>
       )}
@@ -450,6 +551,16 @@ export default function BackofficeView() {
                       title="Riscrive titolo, keyword e descrizione con il prompt corrente"
                     >
                       {working ? "…" : "Rigenera metadati"}
+                    </button>
+                  )}
+                  {conVettoriali(it) && !locked && (
+                    <button
+                      className="btn small ghost"
+                      onClick={() => rivettorializza(it)}
+                      disabled={working || bulk}
+                      title="Ritraccia SVG ed EPS dal JPG con il vettorizzatore corrente. Metadati e JPG restano come sono."
+                    >
+                      {working ? "…" : "Ritraccia vettoriali"}
                     </button>
                   )}
                   {library === "ImagesToSend" && !readOnly && (

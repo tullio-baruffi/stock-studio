@@ -8,13 +8,30 @@ import TrendsView from "./views/TrendsView";
 import GuideView from "./views/GuideView";
 import ConfigurationView from "./views/ConfigurationView";
 import BackofficeView from "./views/BackofficeView";
+import RevisioneView from "./views/RevisioneView";
+import VenditeView from "./views/VenditeView";
+import BonificaView from "./views/BonificaView";
+import ConsigliView from "./views/ConsigliView";
+import InsightsView from "./views/InsightsView";
+import AccessoSharePoint from "./components/AccessoSharePoint";
+import StrategiaView from "./views/StrategiaView";
+import AffinaView from "./views/AffinaView";
 import SignedInAs from "./components/SignedInAs";
+import ExperienceToggle from "./components/ExperienceToggle";
+import BarraStato from "./components/BarraStato";
+import { esperienzaCorrente } from "./experience";
 
-type Tab = "upload" | "monitor" | "system" | "configuration" | "pipeline" | "trends" | "guide" | "backoffice";
+type Tab = "upload" | "monitor" | "system" | "configuration" | "pipeline" | "trends" | "guide" | "backoffice" | "sales" | "insights" | "bonifica" | "consigli" | "strategy" | "tune";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "upload", label: "Carica", icon: "⬆" },
   { key: "backoffice", label: "Backoffice", icon: "🗂" },
+  { key: "sales", label: "Vendite", icon: "💰" },
+  { key: "insights", label: "Insights", icon: "🧭" },
+  { key: "bonifica", label: "Bonifica", icon: "🧹" },
+  { key: "consigli", label: "Consigli", icon: "💡" },
+  { key: "strategy", label: "Strategia", icon: "🎯" },
+  { key: "tune", label: "Affina", icon: "🔧" },
   { key: "monitor", label: "Monitoraggio", icon: "📊" },
   { key: "pipeline", label: "Pipeline", icon: "🔀" },
   { key: "trends", label: "Opportunità", icon: "📈" },
@@ -28,6 +45,8 @@ const ADVISED_AT = 3;
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("upload");
+  // Letta una volta sola: cambiarla ricarica la pagina, quindi non serve seguirla nel tempo.
+  const esperienza = esperienzaCorrente();
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
   const [pending, setPending] = useState(0);
   const [reviewing, setReviewing] = useState(false);
@@ -84,6 +103,8 @@ export default function App() {
           </div>
         )}
         <SignedInAs />
+        <AccessoSharePoint compatto />
+        <ExperienceToggle />
       </header>
 
       {showReminder && (
@@ -140,7 +161,19 @@ export default function App() {
 
       <main id="main-panel" role="tabpanel">
         {tab === "upload" && <UploadView pipeline={pipeline} onNavigate={setTab} />}
-        {tab === "backoffice" && <BackofficeView />}
+        {/*
+          La veste Nastro ridipinge tutto il sito, ma cambia la disposizione di una scheda sola,
+          quella dove si passa più tempo: la revisione diventa galleria e cernita invece di una
+          griglia da compilare. Il resto cambia pelle e resta al suo posto, così l'interruttore
+          non sposta le abitudini di chi lo prova.
+        */}
+        {tab === "backoffice" && (esperienza === "nastro" ? <RevisioneView /> : <BackofficeView />)}
+        {tab === "sales" && <VenditeView />}
+        {tab === "bonifica" && <BonificaView />}
+        {tab === "consigli" && <ConsigliView />}
+        {tab === "insights" && <InsightsView />}
+        {tab === "strategy" && <StrategiaView />}
+        {tab === "tune" && <AffinaView />}
         {tab === "monitor" && <MonitorView />}
         {tab === "pipeline" && <PipelineView />}
         {tab === "trends" && <TrendsView />}
@@ -148,6 +181,8 @@ export default function App() {
         {tab === "configuration" && <ConfigurationView />}
         {tab === "guide" && <GuideView />}
       </main>
+
+      {esperienza === "nastro" && <BarraStato />}
     </div>
   );
 }

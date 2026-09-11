@@ -96,6 +96,121 @@ export type FeedbackEntry = {
   categoryChanged: boolean;
 };
 
+/** One file of a delivered set. `url` streams it through the API, so SVG can be shown for real. */
+export type Deliverable = {
+  id: number;
+  fileName: string;
+  kind: string;
+  carrier: boolean;
+  url?: string;
+};
+
+/** Esito dell'importazione dell'esportazione Adobe. */
+export type SalesImport = {
+  ok: boolean;
+  error?: string;
+  lette?: number;
+  importate?: number;
+  giaPresenti?: number;
+  scartate?: number;
+  dal?: string;
+  al?: string;
+  totaleFile?: number;
+  inArchivio?: number;
+};
+
+export type SalesGroup = { nome: string; vendite: number; ricavi: number; perDownload: number };
+
+export type SalesSummary = {
+  ok: boolean;
+  vuoto: boolean;
+  inArchivio: number;
+  dal?: string;
+  al?: string;
+  vendite?: number;
+  ricavi?: number;
+  perDownload?: number;
+  fileDistinti?: number;
+  fileMetaRicavi?: number;
+  perTipo?: SalesGroup[];
+  perLicenza?: SalesGroup[];
+  perSerie?: SalesGroup[];
+  perMese?: { mese: string; vendite: number; ricavi: number }[];
+  migliori?: { file: string; titolo: string; tipo: string; vendite: number; ricavi: number }[];
+};
+
+export type TuneKeywords = {
+  ok: boolean; error?: string; library?: string;
+  esaminati?: number; daCambiare?: number; sogliaPercento?: number;
+  diffuse?: { parola: string; file: number; quota: number }[];
+  righe?: { id: number; file: string; titolo: string; prima: string[]; dopo: string[]; cambia: boolean }[];
+};
+
+export type TuneOverlap = {
+  ok: boolean; error?: string; sogliaPercento?: number;
+  serieTrovate?: number; serieOltreSoglia?: number;
+  serie?: { serie: string; file: number; keywordMedie: number; condivise: number;
+            percentuale: number; oltreSoglia: boolean; esempi: string[] }[];
+};
+
+export type TuneMute = {
+  ok: boolean; error?: string;
+  esaminati?: number; conStorico?: number; senzaStorico?: number;
+  righe?: { id: number; file: string; titolo: string; serie: string; venditeSerie: number; ricaviSerie: number }[];
+};
+
+export type Strategia = {
+  ok: boolean;
+  vuoto?: boolean;
+  aggiornato?: string;
+  archivio?: {
+    vendite: number; ricavi: number; dal: string; al: string;
+    fileVenduti: number; fileMetaRicavi: number;
+  };
+  settimana?: { vendite: number; ricavi: number; perTipo: { tipo: string; vendite: number; ricavi: number }[] };
+  mese?: { vendite: number; ricavi: number };
+  finestra?: {
+    mesi: number;
+    rapporto?: {
+      caricati: number; venditeSeiMesi: number; venditeSettimana: number;
+      perFileCaricato: number; perFileCaricatoSettimana: number;
+    } | null;
+  };
+  tendenza?: {
+    recente: { vendite: number; ricavi: number; perDownload: number };
+    precedente: { vendite: number; ricavi: number; perDownload: number };
+    variazioneVendite: number | null;
+    variazioneRicavi: number | null;
+  };
+  perTipoAnno?: { tipo: string; vendite: number; ricavi: number; perDownload: number }[];
+};
+
+export type SalesDna = {
+  ok: boolean;
+  error?: string;
+  totaleFile?: number;
+  vitali?: number;
+  quotaRicaviVitali?: number;
+  ricaviTotali?: number;
+  venditeMediaVitali?: number;
+  venditeMediaResto?: number;
+  perDownloadVitali?: number;
+  perDownloadResto?: number;
+  tipiVitali?: { tipo: string; file: number }[];
+  parole?: { parola: string; neiPochi: number; altrove: number; rapporto: number }[];
+  elenco?: { file: string; titolo: string; tipo: string; vendite: number; ricavi: number; quotaCustom: number }[];
+};
+
+export type SalesWarehouse = {
+  ok: boolean;
+  error?: string;
+  library?: string;
+  esaminati?: number;
+  conVendite?: number;
+  senzaVendite?: number;
+  righe?: { file: string; titolo: string; vendite: number; ricavi: number }[];
+};
+
 /** A file sitting in one of the SharePoint pipeline stages. */
 export type BackofficeItem = {
   id: number;
@@ -110,11 +225,13 @@ export type BackofficeItem = {
   checkedOutBy?: string;
   modified: string;
   previewUrl: string;
+  /** L'originale su SharePoint. Il browser lo apre con la sessione di chi guarda. */
+  fileUrl?: string;
   /**
    * The other files of the same image, when it was delivered as a set (SVG + EPS + JPEG).
    * Absent for a lone file, which is how images arrived before the durable path.
    */
-  deliverables?: { id: number; fileName: string; kind: string; carrier: boolean }[] | null;
+  deliverables?: Deliverable[] | null;
   validation: {
     score: number;
     blocksDispatch: boolean;
@@ -149,6 +266,131 @@ export type CheckInResult = {
 };
 
 /** Level of the API's own App Service plan and how much of the free CPU quota today is gone. */
+/**
+ * Lo stato del deposito dei punteggi in libreria.
+ *
+ * Serve a rendere visibile un lavoro che per costruzione non si vede: il punteggio viene scritto
+ * in sottofondo, apposta per non far aspettare chi guarda la galleria. Senza un posto dove
+ * mostrarlo, l'unico modo di sapere se sta lavorando è sperarlo.
+ */
+export type PunteggioLibreria = {
+  libreria: string;
+  completa: boolean;
+  visitati: number;
+  depositati: number;
+  totale: number;
+  cursore: string | null;
+  pagine: number;
+  /** Motivo per cui lo scorrimento si è fermato, nullo quando procede. */
+  interrotta: string | null;
+  inCorso: boolean;
+};
+
+export type PunteggioStato = {
+  ok: boolean;
+  coda: {
+    scritti: number;
+    scartati: number;
+    inCoda: number;
+    riempimento: {
+      depositati: number;
+      visitati: number;
+      complete: string[];
+      lavoro: string;
+      da: string;
+      avvio: string;
+      librerie: PunteggioLibreria[];
+    };
+    ultimoErrore: string | null;
+  };
+  lotti: {
+    riusciti: number;
+    falliti: number;
+    rifiutiPerCarico: number;
+    ultimoErrore: string | null;
+  };
+  colonna: { library: string; completa: boolean } | null;
+};
+
+/** Il cruscotto: ogni cifra risponde a una domanda, altrimenti è decorazione. */
+export type Insights = {
+  ok: boolean;
+  error?: string;
+  library: string;
+  aggiornatoAl: string;
+  andamento: Record<"ultimi30" | "ultimi90" | "ultimi365", {
+    giorni: number; vendite: number; ricavi: number;
+    venditePrima: number; ricaviPrima: number; variazione: number | null;
+  }>;
+  efficienza: {
+    fileInPortfolio: number; fileCheVendono: number; percentualeCheVende: number;
+    ricavoPerFileProdotto: number; ricavoPerFileCheVende: number;
+    ricaviTotali: number; venditeTotali: number;
+  };
+  copertura: {
+    misurata: boolean; esatta: boolean; scorsaIl?: string | null;
+    serieRiconosciute: string[];
+    venditeGestite: number; ricaviGestiti: number;
+    venditeFuori: number; ricaviFuori: number; fileFuori: number;
+    percentualeRicaviGestiti: number;
+  };
+  concentrazione: {
+    fileCheFannoMetaRicavi: number; percentualeDelPortfolio: number;
+    migliore: { file: string; vendite: number; ricavi: number }[];
+  };
+  mercato: {
+    perTipo: { tipo: string; vendite: number; ricavi: number; perDownload: number }[];
+    perLicenza: { licenza: string; vendite: number; ricavi: number }[];
+  };
+  stagionalita: {
+    mesi: { mese: number; nome: string; vendite: number; ricavi: number }[];
+    mediaMensile: number; migliori: string[]; peggiori: string[];
+  };
+  metadatiFannoVendere: {
+    esaminati: number; venduti: number; fermi: number;
+    punteggioMedianoVenduti: number; punteggioMedianoFermi: number; differenza: number;
+    attendibile: boolean; soglia: number; collisioni: number;
+    mediaVenduti: number; mediaFermi: number;
+    sopra90Venduti: number; sopra90Fermi: number;
+  };
+  pazienza: {
+    misurate: number; giorniMedianiAllaPrimaVendita: number;
+    entroUnMese: number; oltreSeiMesi: number;
+  };
+  spenti: { file: string; vendite: number; ricavi: number; fermoDa: number }[];
+};
+
+/** Il quadro d'insieme del portfolio già pubblicato. */
+export type BonificaQuadro = {
+  ok: boolean;
+  error?: string;
+  totale: number;
+  cheVendono: number;
+  cheNonVendono: number;
+  percentualeCheVende: number;
+  ricaviTotali: number;
+  conMetadatiDeboli: number;
+  sogliaMetadatiDeboli: number;
+  fasce: { fascia: string; quanti: number; deboli: boolean }[];
+};
+
+/** Una riga della coda di bonifica: cosa fare di questa immagine, e perché. */
+export type BonificaRiga = {
+  id: number;
+  fileName: string;
+  title: string;
+  keywords: string[];
+  punteggio: number;
+  vendite: number;
+  ricavi: number;
+  giorniOnline: number | null;
+  consiglio: string;
+  perche: string;
+  problemi: { severity: string; field: string; message: string }[];
+  previewUrl: string;
+  fileUrl: string;
+};
+
 export type PlanState = {
   ok: boolean;
   configured: boolean;
@@ -177,6 +419,26 @@ export type RegenerateResult = {
   previousTitleLength: number;
   previousKeywords: number;
   item?: BackofficeItem | null;
+};
+
+/** Una consegna vettoriale riscritta, col peso prima e dopo. */
+export type ConsegnaRiscritta = {
+  tipo: string;
+  fileName: string;
+  kbPrima: number;
+  kbDopo: number;
+};
+
+/** Esito del ritracciamento di SVG ed EPS di un'immagine già in libreria. */
+export type RivettorializzaResult = {
+  ok: boolean;
+  id: number;
+  fileName: string;
+  error?: string | null;
+  consegne?: ConsegnaRiscritta[] | null;
+  aColori: boolean;
+  /** L'immagine è già su Adobe: il file nuovo va ricaricato là a mano. */
+  daRiportare: boolean;
 };
 
 export type JobSummary = {
@@ -359,47 +621,6 @@ async function f(url: string, init: RequestInit = {}): Promise<Response> {
   }
 }
 
-/**
- * Previews go through a small queue instead of starting all at once.
- *
- * A grid of 24 cards used to open 24 parallel requests, each one a CORS preflight plus a
- * multi-megabyte download from SharePoint and a server-side resize. Paging two or three times
- * stacked those requests on the Free-tier worker until it stopped answering, and a dropped request
- * carries no CORS headers — so the browser reported the overload as "Failed to fetch" on the next
- * page, blaming CORS for what was really exhaustion. Four at a time keeps the server responsive.
- */
-const PREVIEW_PARALLEL = 4;
-let previewActive = 0;
-const previewWaiting: (() => void)[] = [];
-
-function acquirePreviewSlot(): Promise<void> {
-  if (previewActive < PREVIEW_PARALLEL) {
-    previewActive++;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => previewWaiting.push(() => { previewActive++; resolve(); }));
-}
-
-function releasePreviewSlot(): void {
-  previewActive--;
-  previewWaiting.shift()?.();
-}
-
-/** Fetches a protected image and returns an object URL, so the key stays in the header. */
-export async function fetchBlobUrl(url: string, signal?: AbortSignal): Promise<string> {
-  await acquirePreviewSlot();
-  try {
-    // The card may have been dropped while this request sat in the queue; do not spend a round
-    // trip on an image nobody is going to see.
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const response = await f(url, signal ? { signal } : {});
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return URL.createObjectURL(await response.blob());
-  } finally {
-    releasePreviewSlot();
-  }
-}
-
 /** Downloads a file through the same session as the rest of the app, then hands it to the browser. */
 export async function downloadFile(url: string, fallbackName: string): Promise<void> {
   const response = await f(url);
@@ -444,10 +665,15 @@ export const api = {
    * `thresholds` carries the tracing cut the author picked per picture, one entry per file in the
    * same order; "auto" leaves that picture to Otsu inside the Function.
    */
-  handoff(files: File[], mode: "vector" | "raster" = "vector", thresholds?: (number | null)[]): Promise<HandoffResponse> {
+  handoff(files: File[], mode: "vector" | "colore" | "raster" = "vector",
+          thresholds?: (number | null)[], colori?: number, unione?: number): Promise<HandoffResponse> {
     const fd = new FormData();
     files.forEach((file) => fd.append("files", file, file.name));
     fd.append("mode", mode);
+    if (colori != null) fd.append("colori", String(colori));
+    // Zero è una scelta legittima ("non unire niente"), quindi si confronta con null e non con
+    // falsy: `if (unione)` scarterebbe proprio il caso che serve per diagnosticare un difetto.
+    if (unione != null) fd.append("unione", String(unione));
     // Appended after the files and in the same order: the server pairs the two lists by position,
     // which is the only pairing that survives two uploads sharing a file name.
     files.forEach((_, i) => {
@@ -538,16 +764,65 @@ export const api = {
   backofficeStages(): Promise<{ library: string; label: string }[]> {
     return f("/api/backoffice/stages").then(jsonOrThrow);
   },
-  backofficeItems(library: string, take = 24, pageToken?: string | null, search?: string, field?: string): Promise<BackofficePage> {
+  /** Il cruscotto: andamento, efficienza, stagionalità e la prova sui metadati. */
+  insights(library = "ImagesSent", campione = 600, aggiorna = false): Promise<Insights> {
+    return f(`/api/insights/quadro?library=${encodeURIComponent(library)}&campione=${campione}`
+             + (aggiorna ? "&aggiorna=true" : "")).then(jsonOrThrow);
+  },
+  /** Rifà l'aggancio fra vendite e libreria adesso, invece di aspettare il giro dell'ora. */
+  insightsRiaggancia(): Promise<{ ok: boolean; inCorso: boolean; ultimo?: string | null }> {
+    return f("/api/insights/riaggancia", { method: "POST" }).then(jsonOrThrow);
+  },
+  /** Il quadro d'insieme di ciò che è già online: quanto vende, quanto no, quanto è migliorabile. */
+  bonificaQuadro(library = "ImagesSent"): Promise<BonificaQuadro> {
+    return f(`/api/bonifica/quadro?library=${encodeURIComponent(library)}`).then(jsonOrThrow);
+  },
+  /** La coda di lavoro: le immagini più deboli, con il consiglio e la sua motivazione. */
+  bonificaCoda(punteggioMax = 79, pageToken?: string | null, library = "ImagesSent"): Promise<{
+    ok: boolean; error?: string; righe: BonificaRiga[]; nextPageToken?: string | null;
+  }> {
+    const q = new URLSearchParams({ library, take: "24", punteggioMax: String(punteggioMax) });
+    if (pageToken) q.set("pageToken", pageToken);
+    return f(`/api/bonifica/coda?${q}`).then(jsonOrThrow);
+  },
+  /** Se la colonna del punteggio è piena: finché non lo è, i filtri per punteggio vedono meno. */
+  backofficePunteggioStato(library?: string): Promise<PunteggioStato> {
+    const q = library ? `?library=${encodeURIComponent(library)}` : "";
+    return f(`/api/backoffice/punteggio/stato${q}`).then(jsonOrThrow);
+  },
+  backofficeItems(library: string, take = 24, pageToken?: string | null, search?: string, field?: string,
+                  punteggioMin?: number, punteggioMax?: number): Promise<BackofficePage> {
     const q = new URLSearchParams({ library, take: String(take) });
     if (pageToken) q.set("pageToken", pageToken);
     if (search) q.set("search", search);
     if (field) q.set("field", field);
+    if (punteggioMin !== undefined) q.set("punteggioMin", String(punteggioMin));
+    if (punteggioMax !== undefined) q.set("punteggioMax", String(punteggioMax));
     return f(`/api/backoffice/items?${q}`).then(jsonOrThrow);
   },
   backofficeUpdate(library: string, id: number, body: { title?: string; description?: string; tags?: string }): Promise<BackofficeMutation> {
     return f(`/api/backoffice/items/${id}?library=${encodeURIComponent(library)}`, {
       method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(jsonOrThrow);
+  },
+  /**
+   * Registra la correzione appena salvata perché la revisione del prompt possa impararla.
+   * `generated` sono i valori trovati aprendo l'immagine, cioè quelli proposti dall'AI.
+   */
+  backofficeFeedback(library: string, id: number, body: {
+    generatedTitle?: string;
+    generatedDescription?: string;
+    generatedKeywords?: string;
+    title?: string;
+    description?: string;
+    keywords?: string;
+    note?: string;
+  }): Promise<{ ok: boolean; recorded?: boolean; message?: string; error?: string;
+                keywordsAdded?: string[]; keywordsRemoved?: string[]; pending?: number }> {
+    return f(`/api/backoffice/items/${id}/feedback?library=${encodeURIComponent(library)}`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(jsonOrThrow);
@@ -587,6 +862,10 @@ export const api = {
       body: JSON.stringify({ ids }),
     }).then(jsonOrThrow);
   },
+  /** Ritraccia SVG ed EPS di un'immagine già in libreria, riscrivendoli al loro posto. */
+  backofficeRivettorializza(library: string, id: number): Promise<RivettorializzaResult> {
+    return f(`/api/backoffice/items/${id}/rivettorializza?library=${encodeURIComponent(library)}`, { method: "POST" }).then(jsonOrThrow);
+  },
   trends(horizonDays = 150, style = "silhouette"): Promise<Trends> {
     return f(`/api/trends?horizonDays=${horizonDays}&style=${encodeURIComponent(style)}`).then(jsonOrThrow);
   },
@@ -612,6 +891,45 @@ export const api = {
   },
   predictedTrends(yearsAhead = 2, promptStyle = "silhouette"): Promise<Predictions> {
     return f(`/api/trends/predicted?yearsAhead=${yearsAhead}&promptStyle=${encodeURIComponent(promptStyle)}`).then(jsonOrThrow);
+  },
+  /** Manda al server l'esportazione del portale Adobe, così com'è scaricata. */
+  importSales(csv: string): Promise<SalesImport> {
+    return f(`/api/sales/import`, {
+      method: "POST",
+      headers: { "Content-Type": "text/csv" },
+      body: csv,
+    }).then(jsonOrThrow);
+  },
+  salesSummary(from?: string, to?: string): Promise<SalesSummary> {
+    const q = new URLSearchParams();
+    if (from) q.set("from", from);
+    if (to) q.set("to", to);
+    return f(`/api/sales/summary${q.toString() ? `?${q}` : ""}`).then(jsonOrThrow);
+  },
+  salesWarehouse(library = "ImagesSent", take = 200): Promise<SalesWarehouse> {
+    return f(`/api/sales/warehouse?library=${encodeURIComponent(library)}&take=${take}`).then(jsonOrThrow);
+  },
+  salesDna(minimo = 3): Promise<SalesDna> {
+    return f(`/api/sales/dna?minimo=${minimo}`).then(jsonOrThrow);
+  },
+  strategia(caricatiUltimiSeiMesi = 0): Promise<Strategia> {
+    return f(`/api/strategy/quadro?caricatiUltimiSeiMesi=${caricatiUltimiSeiMesi}`).then(jsonOrThrow);
+  },
+  tuneKeywordsPreview(library = "ImagesToSend", take = 50): Promise<TuneKeywords> {
+    return f(`/api/tune/keywords/preview?library=${encodeURIComponent(library)}&take=${take}`).then(jsonOrThrow);
+  },
+  tuneKeywordsApply(library: string, ids: number[]): Promise<{ ok: boolean; scritti?: number; invariati?: number; error?: string }> {
+    return f(`/api/tune/keywords/apply?library=${encodeURIComponent(library)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ids),
+    }).then(jsonOrThrow);
+  },
+  tuneOverlap(library = "ImagesToSend", take = 150): Promise<TuneOverlap> {
+    return f(`/api/tune/overlap?library=${encodeURIComponent(library)}&take=${take}`).then(jsonOrThrow);
+  },
+  tuneMute(library = "ImagesToSend", take = 150): Promise<TuneMute> {
+    return f(`/api/tune/mute?library=${encodeURIComponent(library)}&take=${take}`).then(jsonOrThrow);
   },
   checkDuplicate(name: string): Promise<{ ok: boolean; duplicate?: boolean; error?: string }> {
     return f(`/api/pipeline/duplicate?name=${encodeURIComponent(name)}`).then(jsonOrThrow);

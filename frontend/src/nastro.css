@@ -1,0 +1,395 @@
+/**
+ * La veste Nastro: la pelle, non lo scheletro.
+ *
+ * Tutto qui dentro vive sotto [data-veste="nastro"], che sta sull'elemento radice. Nessuna regola
+ * di questo file può raggiungere la veste classica, e togliere l'attributo riporta il sito com'era
+ * senza rimuovere una riga: è quello che rende l'interruttore un interruttore e non un viaggio di
+ * sola andata.
+ *
+ * ## Perché una pelle e non viste nuove
+ * Ridisegnare le otto sezioni una per una avrebbe significato duplicare ottomila righe di JSX e
+ * mantenerle allineate per sempre. Il grosso del cambiamento passa invece dalle variabili: cambiare
+ * --bg, --panel, --border e --accent ridipinge l'intero sito in un colpo, e quello che resta sono
+ * le forme -- angoli vivi, maiuscoletto, monospazio, densità -- che sono regole di stile e non di
+ * struttura.
+ *
+ * ## Da dove viene
+ * Dai cinque bozzetti in stitch-veste/: fondo nero pieno, un solo accento verde acido, testo
+ * monospazio, pannelli squadrati con intestazione a etichetta, e una barra di stato sempre in
+ * fondo. Chi ci lavora sta davanti a questa schermata per ore: il nero non affatica e l'accento
+ * unico fa sì che l'occhio vada solo dove c'è una decisione da prendere.
+ */
+
+[data-veste="nastro"] {
+  --bg: #000000;
+  --panel: #0a0a0c;
+  --panel2: #101014;
+  --border: #24242b;
+  --text: #e8e8ea;
+  --muted: #7c7c88;
+  --accent: #c8f751;
+  --ok: #c8f751;
+  --warn: #f5a623;
+  --err: #ff4d5e;
+
+  /* Il verde acido su nero è illeggibile come testo lungo: serve solo per i bordi e le etichette. */
+  --lime: #c8f751;
+  --lime-dim: rgba(200, 247, 81, .14);
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+  /* Altezza della barra di stato: la sanno sia chi la disegna sia chi le si deve fermare sopra. */
+  --stato-h: 28px;
+}
+
+[data-veste="nastro"] body {
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: .2px;
+}
+
+[data-veste="nastro"] ::selection { background: var(--lime); color: #000; }
+
+/* Il contenuto si allarga: la densità dei bozzetti presuppone tutto lo schermo, non una colonna. */
+[data-veste="nastro"] .app { max-width: 1600px; padding: 0 24px 72px; }
+
+/* ---- Intestazione ---------------------------------------------------------------------- */
+
+[data-veste="nastro"] .topbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 0; margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+[data-veste="nastro"] .brand {
+  font-size: 13px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;
+}
+[data-veste="nastro"] .logo { color: var(--lime); }
+/* Il sottotitolo spiega il prodotto a chi arriva: chi ci lavora ogni giorno lo ha già letto. */
+[data-veste="nastro"] .sub { display: none; }
+[data-veste="nastro"] .pipeline-chip {
+  margin: 0; border-radius: 2px; font-size: 10.5px; letter-spacing: .6px;
+  text-transform: uppercase; padding: 3px 8px;
+}
+[data-veste="nastro"] .pipeline-chip.on { background: var(--lime-dim); color: var(--lime); border-color: rgba(200,247,81,.35); }
+[data-veste="nastro"] .whoami { margin-left: auto; }
+
+/* ---- Sezioni --------------------------------------------------------------------------- */
+
+[data-veste="nastro"] .tabs {
+  gap: 0; margin: 0 0 20px; border-bottom: 1px solid var(--border);
+}
+[data-veste="nastro"] .tab {
+  border-radius: 0; padding: 11px 16px; font-size: 11px; letter-spacing: 1.6px;
+  text-transform: uppercase; border-bottom: 2px solid transparent;
+}
+[data-veste="nastro"] .tab:hover { background: transparent; color: var(--text); }
+[data-veste="nastro"] .tab.active { color: var(--lime); border-bottom-color: var(--lime); }
+/* Le emoji delle schede sono figurine: in una veste monospazio stonano e rubano larghezza. */
+[data-veste="nastro"] .tab-icon { display: none; }
+[data-veste="nastro"] .tab-badge {
+  border-radius: 2px; background: var(--lime); color: #000; font-weight: 700;
+}
+
+/* ---- Forme: angoli vivi ovunque --------------------------------------------------------
+ *
+ * L'elenco è lungo perché è esaustivo: ricavato dai selettori che nel foglio classico dichiarano
+ * un raggio. Squadrarli con una regola sola sarebbe stato più corto ma avrebbe colpito anche le
+ * poche cose che tonde devono restare -- la spia dell'interruttore, il quadrante del punteggio,
+ * la rotella di attesa -- che sono cerchi per significato, non per decorazione.
+ */
+[data-veste="nastro"] :is(
+  .badge, .batch, .bo-bulk, .bo-flag, .bo-kind, .bo-pager, .bo-score, .bo-stage, .btn, .bulkbar,
+  .cachechip, .card, .caveat, .cfg-active, .cfg-area, .cfg-area-note, .cfg-card, .cfg-choice,
+  .cfg-hero, .cfg-safety, .cfg-state, .chip, .cn-esito, .cn-fbtn, .cn-input, .cn-stage, .drop,
+  .ebadge, .empty, .engine-warn, .exp-toggle, .fail-row, .fbar, .fbar-track, .fbrow, .files a,
+  .files button, .fstep, .gcard, .gflow, .gl-bulk, .gl-card, .gl-pick, .gl-shot, .guid-badge,
+  .guid-text, .guide-hero, .guide-note, .hotnow, .jobdetail, .jobrow, .kbadge, .knowledge-legend,
+  .kpi, .meta input, .meta textarea, .modal, .modebtn, .msrc, .myitem, .notice, .pbar,
+  .pipeline-chip, .relevance, .review-reminder, .rl-frame, .sat-input, .status-legend,
+  .stepper-badge, .subtab, .tab, .tab-badge, .tbadge, .tile, .tkw, .topic, .topic-cat,
+  .topic-score, .topic-window, .trace-preview canvas, .trace-toggle, .track-input, .track-stage,
+  .traj, .trend-loading, .trends-controls input, .trends-controls select, .trends-hero, .valid,
+  .vbadge, .vissue .vsev, .vscore, .vsite, .cn-keys kbd, input, textarea, select, code
+) {
+  border-radius: 2px;
+}
+
+/* Le barre di scorrimento chiare sono l'unico pezzo di veste che il foglio classico non toccava:
+   su fondo nero diventano due strisce bianche che tagliano la schermata in due. */
+[data-veste="nastro"] * { scrollbar-color: #2c2c34 #000; scrollbar-width: thin; }
+[data-veste="nastro"] ::-webkit-scrollbar { width: 9px; height: 9px; }
+[data-veste="nastro"] ::-webkit-scrollbar-track { background: #000; }
+[data-veste="nastro"] ::-webkit-scrollbar-thumb { background: #2c2c34; }
+[data-veste="nastro"] ::-webkit-scrollbar-thumb:hover { background: #3d3d47; }
+
+/* ---- Comandi --------------------------------------------------------------------------- */
+
+[data-veste="nastro"] .btn {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
+  padding: 7px 14px; background: transparent; border-color: var(--border); color: var(--muted);
+}
+[data-veste="nastro"] .btn:hover:not(:disabled) { border-color: var(--lime); color: var(--lime); }
+[data-veste="nastro"] .btn.primary,
+[data-veste="nastro"] .btn.accent {
+  background: var(--lime); border-color: var(--lime); color: #000; font-weight: 700;
+}
+[data-veste="nastro"] .btn.primary:hover:not(:disabled),
+[data-veste="nastro"] .btn.accent:hover:not(:disabled) { background: #d8ff6b; color: #000; }
+[data-veste="nastro"] .btn.danger { border-color: rgba(255,77,94,.45); color: var(--err); }
+[data-veste="nastro"] .btn.danger:hover:not(:disabled) { border-color: var(--err); background: rgba(255,77,94,.1); }
+[data-veste="nastro"] .btn.small { padding: 5px 10px; font-size: 10px; }
+
+/* La scelta attiva, con i colori di questa veste. Vedi la regola gemella in index.css. */
+[data-veste="nastro"] .scelte button[aria-pressed="true"] {
+  background: var(--lime); border-color: var(--lime); color: #000; font-weight: 700;
+}
+[data-veste="nastro"] .scelte button[aria-pressed="true"]:hover:not(:disabled) {
+  background: #d8ff6b; color: #000;
+}
+
+[data-veste="nastro"] input,
+[data-veste="nastro"] textarea,
+[data-veste="nastro"] select {
+  font-family: var(--mono); background: #000; border-color: var(--border); color: var(--text);
+}
+[data-veste="nastro"] input:focus,
+[data-veste="nastro"] textarea:focus,
+[data-veste="nastro"] select:focus { border-color: var(--lime); }
+[data-veste="nastro"] ::placeholder { color: #4a4a52; }
+
+/* ---- Pannelli -------------------------------------------------------------------------- */
+
+[data-veste="nastro"] .card,
+[data-veste="nastro"] .cfg-card,
+[data-veste="nastro"] .cfg-area,
+[data-veste="nastro"] .guide-sec,
+[data-veste="nastro"] .theme-card,
+[data-veste="nastro"] .gcard,
+[data-veste="nastro"] .tile,
+[data-veste="nastro"] .kpi {
+  background: var(--panel); border-color: var(--border);
+}
+[data-veste="nastro"] .section-title,
+[data-veste="nastro"] .cfg-card-head,
+[data-veste="nastro"] .guid-head,
+[data-veste="nastro"] .valid-head {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+}
+[data-veste="nastro"] h1, [data-veste="nastro"] h2, [data-veste="nastro"] h3 {
+  font-family: var(--mono); letter-spacing: 1.4px; text-transform: uppercase;
+}
+[data-veste="nastro"] h2 { font-size: 12px; color: var(--muted); }
+[data-veste="nastro"] h3 { font-size: 11px; color: var(--muted); }
+
+[data-veste="nastro"] .badge,
+[data-veste="nastro"] .chip,
+[data-veste="nastro"] .guid-badge,
+[data-veste="nastro"] .bo-kind,
+[data-veste="nastro"] .kbadge,
+[data-veste="nastro"] .vbadge,
+[data-veste="nastro"] .tbadge,
+[data-veste="nastro"] .ebadge {
+  border-radius: 2px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* I numeri sono la sostanza di queste schermate: vanno letti in colonna, non ballonzolanti. */
+[data-veste="nastro"] .kpi-value,
+[data-veste="nastro"] .tile-value,
+[data-veste="nastro"] .fcount,
+[data-veste="nastro"] .vscore,
+[data-veste="nastro"] .topic-score,
+[data-veste="nastro"] .pg-conto,
+[data-veste="nastro"] .cn-score-n {
+  font-variant-numeric: tabular-nums; font-family: var(--mono);
+}
+
+/* Avanzamento dei punteggi: nella veste Nastro le barre sono squadrate come tutto il resto. */
+[data-veste="nastro"] .pg-barra,
+[data-veste="nastro"] .pg-riempita {
+  border-radius: 0;
+}
+[data-veste="nastro"] .pg-nome {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .2px;
+}
+
+[data-veste="nastro"] .drop { border-style: dashed; border-color: var(--border); background: var(--panel); }
+[data-veste="nastro"] .drop.over { border-color: var(--lime); background: var(--lime-dim); }
+[data-veste="nastro"] .drop-icon { color: var(--lime); }
+
+[data-veste="nastro"] .review-reminder { border-radius: 2px; }
+[data-veste="nastro"] .review-reminder.advised { border-color: var(--lime); }
+
+/* ---- Revisione: il posto dove si passa il tempo ----------------------------------------- */
+
+[data-veste="nastro"] .cn-top { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+[data-veste="nastro"] .cn-title { letter-spacing: 3px; color: var(--lime); font-weight: 700; }
+[data-veste="nastro"] .cn-lab { font-size: 9.5px; letter-spacing: 1.6px; }
+
+/* Il punteggio come quadrante: un numero solo, dentro un cerchio, senza etichette intorno. */
+[data-veste="nastro"] .cn-score {
+  width: 104px; height: 104px; margin: 4px auto 10px; border-radius: 50%;
+  border: 2px solid var(--border); background: transparent; justify-content: center;
+}
+[data-veste="nastro"] .cn-score.alto { border-color: var(--lime); }
+[data-veste="nastro"] .cn-score.medio { border-color: var(--warn); }
+[data-veste="nastro"] .cn-score.basso { border-color: var(--err); }
+[data-veste="nastro"] .cn-score-n { font-size: 30px; }
+[data-veste="nastro"] .cn-score.alto .cn-score-n { color: var(--lime); }
+[data-veste="nastro"] .cn-score-l { font-size: 8px; letter-spacing: 1.4px; }
+
+[data-veste="nastro"] .cn-fbtn {
+  border-radius: 2px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1.2px;
+}
+[data-veste="nastro"] .cn-fbtn.on { background: var(--lime); border-color: var(--lime); color: #000; font-weight: 700; }
+
+/*
+ * Il fondo scuro è una scelta di stile, ma un'immagine in bianco e nero su fondo nero non si vede:
+ * i tracciati sono neri e il fondo del vettoriale è trasparente, quindi il riquadro sembra vuoto
+ * mentre il file è perfetto. Il fondo resta scuro per il raster (dove il nero è dipinto e si vede
+ * comunque) e diventa bianco sotto i vettoriali, che è poi il fondo su cui verranno usati.
+ */
+[data-veste="nastro"] .cn-stage { background: #08080a; border: 1px solid var(--border); }
+[data-veste="nastro"] .cn-svg { background: #fff; }
+[data-veste="nastro"] .rl-frame { background: #08080a; border-color: var(--border); }
+[data-veste="nastro"] .rl-frame.on { border-color: var(--lime); }
+[data-veste="nastro"] .cn-roll { border-color: var(--border); }
+
+/*
+ * La barra dei comandi diventa una fascia a tutta larghezza in fondo allo schermo, come nel
+ * bozzetto. Le scorciatoie contano solo mentre si guarda l'immagine: tenerle sempre nello stesso
+ * punto le rende una tastiera visibile, invece di una didascalia da ritrovare ogni volta.
+ */
+[data-veste="nastro"] .cn-keys {
+  position: sticky; bottom: var(--stato-h); z-index: 4;
+  margin: 0 -24px calc(0px - var(--stato-h)); padding: 10px 24px;
+  justify-content: center; gap: 0;
+  background: #08080a; border-top: 1px solid var(--border);
+}
+[data-veste="nastro"] .cn-keys kbd {
+  border-radius: 2px; margin: 0 6px 0 18px; font-size: 10px; letter-spacing: 1px;
+  border-bottom-width: 1px; color: var(--muted);
+}
+[data-veste="nastro"] .cn-keys kbd.hot { background: var(--lime); border-color: var(--lime); color: #000; font-weight: 700; }
+[data-veste="nastro"] .cn-keys kbd:first-child { margin-left: 0; }
+
+/* ---- Galleria -------------------------------------------------------------------------- */
+
+[data-veste="nastro"] .gl-card { background: var(--panel); border-color: var(--border); }
+[data-veste="nastro"] .gl-card.sel { border-color: var(--lime); box-shadow: none; outline: 1px solid var(--lime); }
+[data-veste="nastro"] .gl-shot { background: #08080a; }
+[data-veste="nastro"] .gl-name { font-size: 10px; letter-spacing: .3px; }
+[data-veste="nastro"] .gl-bulk { border-radius: 2px; background: #08080a; }
+[data-veste="nastro"] .gl-bulk-n { letter-spacing: 1.4px; text-transform: uppercase; font-size: 10.5px; }
+[data-veste="nastro"] .gl-more { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; }
+[data-veste="nastro"] .bo-score { border-radius: 2px; font-family: var(--mono); }
+
+/* ---- Tabelle e liste ------------------------------------------------------------------- */
+
+[data-veste="nastro"] table { font-family: var(--mono); font-size: 12px; }
+[data-veste="nastro"] th {
+  font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted);
+  font-weight: 400;
+}
+[data-veste="nastro"] .jobrow,
+[data-veste="nastro"] .fbrow,
+[data-veste="nastro"] .topic,
+[data-veste="nastro"] .myitem { background: var(--panel); border-color: var(--border); }
+[data-veste="nastro"] .jobrow.current { border-color: var(--lime); }
+
+/* ---- Sotto-sezioni e opportunità -------------------------------------------------------- */
+
+/* Le sotto-schede erano pillole: qui diventano voci di navigazione, come le schede principali. */
+[data-veste="nastro"] .subtab,
+[data-veste="nastro"] .modebtn {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase;
+  background: transparent; border-color: var(--border); color: var(--muted);
+}
+/* Lo stato attivo va marcato con la stessa classe che usano i componenti, `on`, e con specificità
+   maggiore della regola generica qui sopra: essendo scritta dopo, a parità di peso vincerebbe lei e
+   la scheda attiva resterebbe indistinguibile dalle altre. Era esattamente quello che succedeva. */
+[data-veste="nastro"] .subtab.on,
+[data-veste="nastro"] .modebtn.on {
+  border-color: var(--lime); color: var(--lime); background: var(--lime-dim);
+}
+
+[data-veste="nastro"] .topic-score {
+  font-size: 26px; font-weight: 700; background: transparent;
+  border: 1px solid var(--border); color: var(--text);
+}
+[data-veste="nastro"] .tkw,
+[data-veste="nastro"] .topic-cat,
+[data-veste="nastro"] .topic-window,
+[data-veste="nastro"] .cachechip {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .8px;
+}
+[data-veste="nastro"] .trends-hero,
+[data-veste="nastro"] .guide-hero,
+[data-veste="nastro"] .cfg-hero { background: var(--panel); border-color: var(--border); }
+
+/* ---- Vendite ---------------------------------------------------------------------------- */
+
+[data-veste="nastro"] .vend-mesi,
+[data-veste="nastro"] .vend-barra { border-radius: 0; }
+[data-veste="nastro"] .vend-mesi { background: var(--panel); border-color: var(--border); }
+[data-veste="nastro"] .vend-barra { background: var(--lime); }
+[data-veste="nastro"] .vend-etichetta,
+[data-veste="nastro"] .vend-cifra { font-family: var(--mono); letter-spacing: .4px; }
+[data-veste="nastro"] .vend-dove { color: var(--lime); opacity: .8; }
+/* I ricavi sono la cifra per cui esiste tutto il resto: qui sola a portare l'accento. */
+[data-veste="nastro"] .kpi-value { font-family: var(--mono); letter-spacing: -.5px; }
+[data-veste="nastro"] .kpi:first-child .kpi-value { color: var(--lime); }
+
+/* ---- Barra di stato -------------------------------------------------------------------- */
+
+/*
+ * Sempre in fondo, sempre uguale. Sono i numeri che dicono se l'impianto sta lavorando o è fermo:
+ * finora stavano ciascuno nella propria scheda, e per sapere se la coda si stava svuotando
+ * bisognava andarli a cercare. Qui si leggono senza smettere di fare altro.
+ */
+[data-veste="nastro"] .stato {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  height: var(--stato-h); padding: 0 24px;
+  background: #08080a; border-top: 1px solid var(--border);
+  font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+}
+[data-veste="nastro"] .stato-v { color: var(--text); font-variant-numeric: tabular-nums; margin-left: 6px; }
+[data-veste="nastro"] .stato-v.acceso { color: var(--lime); }
+[data-veste="nastro"] .stato-v.caldo { color: var(--warn); }
+[data-veste="nastro"] .stato-fine { margin-left: auto; color: #3d3d46; }
+
+/* La barra copre il fondo della pagina: senza questo l'ultima riga di ogni sezione ci finisce sotto. */
+[data-veste="nastro"] .app { padding-bottom: 64px; }
+
+[data-veste="nastro"] .vend-parola { border-radius: 0; background: var(--panel); font-family: var(--mono); }
+[data-veste="nastro"] .vend-parola em { color: var(--lime); }
+
+[data-veste="nastro"] .strat-cita { border-radius: 0; border-left-color: var(--lime); background: var(--panel); }
+[data-veste="nastro"] .strat-cons article { border-radius: 0; background: var(--panel); }
+[data-veste="nastro"] .strat-cons h3 { color: var(--lime); }
+
+[data-veste="nastro"] .aff-riga, [data-veste="nastro"] .aff-tag { border-radius: 0; }
+[data-veste="nastro"] .aff-riga { background: var(--panel); }
+[data-veste="nastro"] .aff-tag { background: var(--panel2); font-family: var(--mono); }
+[data-veste="nastro"] .aff-tag.buono { border-color: var(--lime); color: var(--lime); }
+[data-veste="nastro"] .aff-eti.buono { color: var(--lime); }
+
+[data-veste="nastro"] .aff-diffuse { border-radius: 0; background: var(--panel); }
+
+[data-veste="nastro"] .cn-cerca { border-radius: 0; background: #000; font-family: var(--mono); }
+[data-veste="nastro"] .cn-solo input { accent-color: var(--lime); }
+[data-veste="nastro"] .cn-keys { justify-content: flex-start; gap: 8px; }
+[data-veste="nastro"] .cn-keys kbd { margin: 0; }
+[data-veste="nastro"] .cn-pos { color: var(--lime); letter-spacing: 1px; }
+
+[data-veste="nastro"] .tr-quale { border-radius: 0; border-left-color: var(--lime); background: var(--panel); }
+[data-veste="nastro"] .tr-quale-n { color: var(--lime); font-family: var(--mono); letter-spacing: 1.4px; text-transform: uppercase; font-size: 12px; }
+
+[data-veste="nastro"] .cn-avviso { border-radius: 0; background: var(--panel); }
+[data-veste="nastro"] .bo-stage.on { border-color: var(--lime); color: var(--lime); background: var(--lime-dim); }
+
+[data-veste="nastro"] .attesa { border-radius: 0; background: var(--panel); }
+[data-veste="nastro"] .segnaposto-riga { border-radius: 0;
+  background: linear-gradient(90deg, var(--panel) 25%, var(--panel2) 50%, var(--panel) 75%);
+  background-size: 200% 100%; }
+[data-veste="nastro"] .trend-spinner { border-top-color: var(--lime); }

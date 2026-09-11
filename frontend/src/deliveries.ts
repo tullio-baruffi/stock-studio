@@ -25,7 +25,7 @@ export type DeliveredFile = {
 export type DeliveredBatch = {
   id: string;
   at: string;
-  mode: "vector" | "raster";
+  mode: "vector" | "colore" | "raster";
   accepted: number;
   rejected: number;
   files: DeliveredFile[];

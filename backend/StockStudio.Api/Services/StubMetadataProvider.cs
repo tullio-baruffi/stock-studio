@@ -6,6 +6,11 @@ namespace StockStudio.Api.Services;
 /// <summary>
 /// Placeholder metadata provider: derives title/keywords from the file name so the pipeline
 /// runs end-to-end without an AI key. Replaced by an AI vision provider in phase 3.
+///
+/// Non dichiara piu' un supporto. Prima scriveva "black and white vector silhouette" per ogni
+/// file, e da quando si vettorializza anche a colori quella frase sarebbe una descrizione
+/// sbagliata scritta con sicurezza -- il modo piu' rapido di far rifiutare un caricamento, visto
+/// che Adobe controlla che i metadati corrispondano al file.
 /// </summary>
 public class StubMetadataProvider : IMetadataProvider
 {
@@ -13,8 +18,8 @@ public class StubMetadataProvider : IMetadataProvider
 
     private static readonly string[] BaseKeywords =
     {
-        "vector", "silhouette", "black and white", "illustration", "clip art",
-        "isolated", "graphic", "design element", "monochrome", "outline"
+        "vector", "illustration", "clip art",
+        "isolated", "graphic", "design element", "outline"
     };
 
     public Task<MetadataResult> GenerateAsync(string imagePath, string baseName, CancellationToken ct)
@@ -26,11 +31,11 @@ public class StubMetadataProvider : IMetadataProvider
             .ToList();
 
         var title = tokens.Count > 0
-            ? CultureInfo.InvariantCulture.TextInfo.ToTitleCase(string.Join(" ", tokens)) + " Vector Silhouette"
-            : "Vector Silhouette";
+            ? CultureInfo.InvariantCulture.TextInfo.ToTitleCase(string.Join(" ", tokens)) + " Vector Illustration"
+            : "Vector Illustration";
 
         var keywords = tokens.Concat(BaseKeywords).Distinct().Take(49).ToList();
-        var description = title + " - black and white vector silhouette, isolated on white background.";
+        var description = title + " - vector illustration, isolated on a plain background.";
 
         return Task.FromResult(new MetadataResult(title, description, keywords, "Graphic Resources"));
     }

@@ -20,6 +20,7 @@ public class AiMetadataProvider : IMetadataProvider
     private readonly AiOptions _opt;
     private readonly IHttpClientFactory _http;
     private readonly MetadataGuidance _guidance;
+    private readonly KeywordSaturation _saturation;
     private readonly MetadataNormalizer _normalizer;
     private readonly ILogger<AiMetadataProvider> _log;
 
@@ -37,25 +38,27 @@ public class AiMetadataProvider : IMetadataProvider
     }
 
     public AiMetadataProvider(IOptions<AiOptions> opt, IHttpClientFactory http,
-                              MetadataGuidance guidance, MetadataNormalizer normalizer,
+                              MetadataGuidance guidance, KeywordSaturation saturation,
+                              MetadataNormalizer normalizer,
                               ILogger<AiMetadataProvider> log)
     {
         _opt = opt.Value;
         _http = http;
         _guidance = guidance;
+        _saturation = saturation;
         _normalizer = normalizer;
         _log = log;
     }
 
     public async Task<MetadataResult> GenerateAsync(string imagePath, string baseName, CancellationToken ct)
     {
-        using var img = await Image.LoadAsync<Rgb24>(imagePath, ct);
+        using var img = await CaricaImmagine.SuBiancoAsync(imagePath, ct);
         return await DescribeAsync(img, baseName, ct);
     }
 
     public async Task<MetadataResult> GenerateFromBytesAsync(byte[] image, string baseName, CancellationToken ct)
     {
-        using var img = Image.Load<Rgb24>(image);
+        using var img = CaricaImmagine.SuBianco(image);
         return await DescribeAsync(img, baseName, ct);
     }
 
@@ -71,15 +74,28 @@ public class AiMetadataProvider : IMetadataProvider
             "Metadata\" (v2, August 2021) to the letter, because metadata that breaks it gets rejected " +
             "or buried in search. Its rules, which you must apply:\n" +
             "TITLE\n" +
-            "- Concise: aim for 70 characters or fewer. The title is searchable and becomes the URL.\n" +
+            "- Aim for 64 characters or fewer, and never exceed 70. The title is searchable, it " +
+            "becomes the URL of the asset, and past 64 characters it is truncated when written to " +
+            "the IPTC field.\n" +
+            "- ONE sentence describing what is literally in the picture. Never add a second sentence " +
+            "about mood, lighting or atmosphere: nobody searches for 'bright studio lighting creates " +
+            "a cheerful mood', so it only consumes the characters that the subject needed.\n" +
+            "- Front-load it: the buyer's search terms belong at the start, not after a subordinate " +
+            "clause.\n" +
             "- No brand names, no product names, no people's names.\n" +
             "- No special characters and no repeated punctuation.\n" +
             "KEYWORDS\n" +
             $"- Between {minKw} and {maxKw} tags. Work through every axis listed under WHAT TO DESCRIBE " +
             $"before stopping: on a normal image that yields about {Math.Min(maxKw, minKw + 10)} tags. " +
             "Return fewer only when the picture is genuinely bare, and never pad with vague synonyms.\n" +
-            "- Order matters. The first 10 carry the most weight, so put the most important subject " +
-            "terms first, and make sure every significant word of the title appears among them.\n" +
+            "- THE FIRST SEVEN DECIDE EVERYTHING. Adobe weighs the opening keywords far above the " +
+            "rest, so those seven are not a summary: they are the searches you are choosing to " +
+            "compete in. Fill them with the terms a paying customer would actually type — the " +
+            "subject, its species or breed, what it is doing, the occasion — and never with " +
+            "generic filler like 'background', 'photo' or 'concept'. Alphabetical order is the " +
+            "one order guaranteed to be wrong.\n" +
+            "- After those seven, continue by decreasing commercial usefulness. Every significant " +
+            "word of the title must appear among the keywords.\n" +
             "- Nouns must be singular: 'cat', never 'cats'.\n" +
             "- Adjectives must be descriptive, not subjective: 'red', 'furry', 'sunny' are fine; " +
             "'cute', 'beautiful', 'stunning', 'trendy', 'graceful', 'elegant', 'dramatic', " +
@@ -112,13 +128,23 @@ public class AiMetadataProvider : IMetadataProvider
             _log.LogDebug("Prompt metadati esteso con la guida appresa v{V}", _guidance.Current.Version);
         }
 
+        // Quali parole il magazzino ha già consumato. È il solo pezzo di contesto che il modello
+        // non possa ricavare dall'immagine, perché richiede di aver visto le altre.
+        var sature = _saturation.PromptBlock;
+        if (sature.Length > 0) system += sature;
+
         var instructions =
             "Analyze the image and return ONLY a JSON object with keys: " +
             "\"title\" (see the TITLE rules), " +
             "\"description\" (one clear factual sentence), " +
-            $"\"keywords\" (an array of {minKw}-{maxKw} lowercase English tags, ordered by relevance, no duplicates), " +
+            $"\"keywords\" (an array of {minKw}-{maxKw} lowercase English tags, ordered by commercial " +
+            "priority with the seven most valuable search terms first, no duplicates), " +
             "\"category\" (a single Adobe Stock category name). " +
-            $"The artwork is a black and white vector silhouette/illustration. Filename hint: '{baseName}'.";
+            // Prima qui c'era scritto che l'immagine è una silhouette vettoriale in bianco e nero,
+            // sempre, anche quando il file era la fotografia di uno scoiattolo: la stessa pipeline
+            // serve tre librerie diverse. Dire al modello cosa sta guardando quando non lo si sa
+            // è peggio che tacere, perché lo spinge a descrivere ciò che gli è stato annunciato.
+            $"Describe what you actually see. Filename hint: '{baseName}'.";
 
         var payload = new Dictionary<string, object?>
         {

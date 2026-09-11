@@ -78,8 +78,21 @@ public class MetadataFeedbackStore
     /// Returns null when nothing changed and no note was written: there would be nothing to learn.
     /// </summary>
     public FeedbackEntry? Record(Job job, JobItem item, MetadataSnapshot corrected, string? note)
+        => Add(Build(job.Id, item.Id, item.BaseName, item.Mode, item.AiOriginal, corrected, note));
+
+    /// <summary>
+    /// Lo stesso journal, per le correzioni fatte fuori da un job: la revisione dei file che sono
+    /// arrivati in SharePoint attraverso la pipeline. Non c'e' un job a cui puntare, quindi gli
+    /// identificativi dicono da dove viene la voce invece di fingersi riferimenti a un job.
+    /// </summary>
+    public FeedbackEntry? RecordCorrection(string baseName, string mode,
+                                           MetadataSnapshot? generated, MetadataSnapshot corrected,
+                                           string? note)
+        => Add(Build("backoffice", baseName, baseName, mode, generated, corrected, note));
+
+    private static FeedbackEntry Build(string jobId, string itemId, string baseName, string mode,
+                                       MetadataSnapshot? generated, MetadataSnapshot corrected, string? note)
     {
-        var generated = item.AiOriginal;
         var before = generated?.Keywords ?? new List<string>();
 
         var added = corrected.Keywords
@@ -89,13 +102,13 @@ public class MetadataFeedbackStore
             .Where(k => !corrected.Keywords.Contains(k, StringComparer.OrdinalIgnoreCase))
             .ToList();
 
-        var entry = new FeedbackEntry(
+        return new FeedbackEntry(
             Guid.NewGuid().ToString("N"),
             DateTime.UtcNow,
-            job.Id,
-            item.Id,
-            item.BaseName,
-            item.Mode,
+            jobId,
+            itemId,
+            baseName,
+            mode,
             string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
             generated,
             corrected,
@@ -103,7 +116,10 @@ public class MetadataFeedbackStore
             removed,
             generated is not null && !string.Equals(generated.Title, corrected.Title, StringComparison.Ordinal),
             generated is not null && !string.Equals(generated.Category, corrected.Category, StringComparison.OrdinalIgnoreCase));
+    }
 
+    private FeedbackEntry? Add(FeedbackEntry entry)
+    {
         if (!entry.IsUseful) return null;
 
         lock (_gate)

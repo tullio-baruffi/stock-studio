@@ -184,15 +184,18 @@ public static class StockThemeCatalog
             ? null
             : All.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Turns drawable subjects into prompts ready to paste into the image generator.</summary>
+    /// <summary>
+    /// Trasforma i soggetti in prompt pronti da usare.
+    ///
+    /// Il suffisso non nomina più un supporto. Prima ne imponeva uno — silhouette, piatto, line art —
+    /// e il prompt usciva già deciso su come andasse realizzato il tema. Ma la ricerca di opportunità
+    /// risponde a "cosa vale la pena fare", non a "in che tecnica": lo stesso soggetto può diventare
+    /// una fotografia o un vettoriale, e quale delle due convenga si decide dopo, guardando in quale
+    /// delle graduatorie di Adobe si ha più spazio.
+    /// </summary>
     public static IReadOnlyList<string> BuildPrompts(StockTheme theme, string style, string? flavour = null, int take = 4)
     {
-        string suffix = style switch
-        {
-            "flat" => "flat vector illustration, bold simple shapes, limited color palette, white background, no text",
-            "lineart" => "clean single-weight line art, black lines on white background, no shading, no text",
-            _ => "solid black silhouette on a pure white background, high contrast, no gradients, no outlines, no text, centered, clean shape suitable for vector tracing",
-        };
+        const string suffix = "clear composition, uncluttered background, no text";
 
         var season = !string.IsNullOrWhiteSpace(flavour) && flavour!.Length < 40 ? $" ({flavour} theme)" : "";
         return theme.Subjects.Take(take).Select(s => $"{s}{season}, {suffix}").ToList();

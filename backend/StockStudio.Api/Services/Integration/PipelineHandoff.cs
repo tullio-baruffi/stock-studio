@@ -3,6 +3,8 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.Options;
 using StockStudio.Shared.Contracts;
 
+using StockStudio.Shared.Vettoriale;
+
 namespace StockStudio.Api.Services.Integration;
 
 public record HandoffResult(string BlobName, string OriginalFileName);
@@ -38,7 +40,8 @@ public class PipelineHandoff
     /// <summary>True when the storage account behind the pipeline is reachable from here.</summary>
     public bool Enabled => !string.IsNullOrWhiteSpace(_s.StorageConnectionString);
 
-    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, int? threshold, CancellationToken ct)
+    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, int? threshold,
+                                                  int? colori, double? unione, CancellationToken ct)
     {
         if (!Enabled)
             throw new InvalidOperationException(
@@ -64,10 +67,20 @@ public class PipelineHandoff
         {
             BlobName = blobName,
             OriginalFileName = fileName,
-            Mode = string.Equals(mode, "raster", StringComparison.OrdinalIgnoreCase) ? "raster" : "vector",
+            Mode = Modalita.Normalizza(mode),
             // Out of range means "no opinion", not "clamp to the edge": a value the author never
             // chose would trace a silhouette nobody asked for, where Otsu at least reads the image.
             Threshold = threshold is >= 0 and <= 255 ? threshold : null,
+            // Fuori intervallo vuol dire "nessuna preferenza": si lascia decidere al valore
+            // predefinito invece di accostarsi al limite, che sarebbe una scelta di nessuno.
+            //
+            // Il tetto e' trentadue come nella Function che riceve il messaggio: quando qui era
+            // ventiquattro, un valore fra i due veniva scartato in silenzio e chi l'aveva scelto
+            // otteneva il predefinito senza che niente glielo dicesse.
+            Colori = colori is >= 2 and <= 32 ? colori : null,
+            // Zero e' una scelta legittima -- "non unire niente" -- quindi passa; solo i valori
+            // assurdi diventano "nessuna preferenza".
+            Unione = unione is >= 0 and <= 4000 ? unione : null,
         }.ToString(), ct);
 
         _log.LogInformation("Consegnato alla pipeline: {File} come {Blob}", fileName, blobName);

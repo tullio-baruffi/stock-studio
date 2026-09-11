@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 
+using StockStudio.Shared.Vettoriale;
+
 namespace StockStudio.Api.Services;
 
 public record ValidationIssue(string Severity, string Field, string Message, string? Site = null);
@@ -199,7 +201,7 @@ public class StockValidator
             }
 
             // --- Guide, illustration section: vectors must carry vector/graphic ---
-            if (string.Equals(mode, "vector", StringComparison.OrdinalIgnoreCase))
+            if (Modalita.EVettoriale(mode))
             {
                 var required = new[] { "vector", "graphic" }.Where(r => !flatAll.Contains(r)).ToList();
                 if (required.Count > 0)

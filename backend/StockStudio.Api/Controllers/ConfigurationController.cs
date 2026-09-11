@@ -92,6 +92,11 @@ public class ConfigurationController : ControllerBase
                     Item("Riduzione impurità", $"{_vector.TurdSize} px", "Vectorize:TurdSize"),
                     Item("Smoothing curve", _vector.AlphaMax.ToString("0.##"), "Vectorize:AlphaMax"),
                     Item("Tolleranza ottimizzazione", _vector.OptTolerance.ToString("0.###"), "Vectorize:OptTolerance"),
+                    Item("Tinte del tracciato a colori", $"{_vector.NumeroColori}", "Vectorize:NumeroColori"),
+                    Item("Unione tinte gemelle", _vector.SogliaUnione <= 0
+                            ? "Disattivata"
+                            : $"{_vector.SogliaUnione:0} (predefinita; si può scegliere al caricamento)",
+                         "Vectorize:SogliaUnione"),
                     Item("JPEG", $"{_vector.JpegLongEdge}px · qualità {_vector.JpegQuality}", "Vectorize:JpegLongEdge / JpegQuality"),
                     Item("Illustrator", $"{_vector.Illustrator.ScalePercent}% · timeout {_vector.Illustrator.TimeoutSeconds}s", "Vectorize:Illustrator"),
                 },
@@ -190,9 +195,11 @@ public class ConfigurationController : ControllerBase
         {
             Area("Modalità contenuto",
                 "Non è una configurazione del server: si sceglie a ogni caricamento, nella scheda Carica. " +
-                "Per questo nessuna delle due risulta \"in uso\". Il valore predefinito è Vettoriale.",
-                Choice("vector", "Vettoriale", "Traccia l'immagine e produce SVG, EPS e JPG. È la modalità preselezionata.", false,
+                "Per questo nessuna risulta \"in uso\". Il valore predefinito è Vettoriale in bianco e nero.",
+                Choice("vector", "Vettoriale in bianco e nero", "Una soglia di luminanza e una passata di tracciato: la silhouette. È la modalità preselezionata.", false,
                     "potrace incluso oppure Adobe Illustrator"),
+                Choice("colore", "Vettoriale a colori", $"Riduce l'immagine a poche tinte e traccia una passata per ognuna: {_vector.NumeroColori} al massimo. È un tetto, non una promessa: le tinte che descrivono una frangia di contorno invece di una zona vengono scartate, quindi su un disegno che ha meno colori ne escono meno.", false,
+                    "potrace incluso"),
                 Choice("raster", "Immagine", "Mantiene il raster e produce il JPEG per la pipeline.", false,
                     "nessun software esterno")),
             Area("Motore vettoriale",

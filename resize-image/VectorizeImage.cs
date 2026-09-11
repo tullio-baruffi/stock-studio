@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
@@ -18,6 +20,7 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using StockStudio.Shared.Contracts;
+using StockStudio.Shared.Vettoriale;
 
 namespace MJ.Classifier
 {
@@ -94,7 +97,8 @@ namespace MJ.Classifier
                 var raster = string.Equals(message.Mode, "raster", StringComparison.OrdinalIgnoreCase);
                 var produced = raster
                     ? PrepareRaster(originalPath, work, baseName, log)
-                    : Vectorize(originalPath, work, baseName, context.FunctionAppDirectory, message.Threshold, log);
+                    : Vectorize(originalPath, work, baseName, context.FunctionAppDirectory,
+                                message.Threshold, ColoreRichiesto(message.Mode), NumeroColori(message), Unione(message), log);
 
                 // SharePoint vuole qui un percorso relativo al web ("ImagesToClassify/nome"), non
                 // uno server-relative: passandogli "/sites/Classifier/..." tenta di creare la
@@ -154,8 +158,14 @@ namespace MJ.Classifier
         private static string[] PrepareRaster(string originalPath, string dir, string baseName, ILogger log)
         {
             var jpgPath = Path.Combine(dir, baseName + ".jpg");
-            using (var img = Image.Load<Rgb24>(originalPath))
+            // Il JPEG non ha trasparenza: quel che era ritagliato va composto su bianco, o
+            // uscirebbe nero -- che e' quel che accadeva leggendo direttamente in RGB.
+            using (var originale = Image.Load<Rgba32>(originalPath))
             {
+                var rgba = new byte[originale.Width * originale.Height * 4];
+                originale.CopyPixelDataTo(rgba);
+                using var img = Image.LoadPixelData<Rgb24>(Trasparenza.SuBianco(rgba),
+                                                           originale.Width, originale.Height);
                 Downscale(img, JpegLongEdge);
                 img.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
             }
@@ -164,46 +174,172 @@ namespace MJ.Classifier
         }
 
         /// <summary>
-        /// Soglia di luminanza -> potrace -> SVG + EPS, piu' il JPEG di consegna.
+        /// Cosa ha chiesto chi ha caricato: colori, bianco e nero, o niente.
+        ///
+        /// Null non e' un'assenza di risposta ma una risposta precisa -- "guardala tu" -- ed e' il
+        /// caso normale: se un'immagine ha colori si vede guardandola, e chiederlo ogni volta
+        /// sarebbe far fare a mano un lavoro che la macchina fa meglio.
+        /// </summary>
+        private static bool? ColoreRichiesto(string mode)
+        {
+            if (string.IsNullOrWhiteSpace(mode)) return null;
+            if (string.Equals(mode, "colore", StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(mode, "color", StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(mode, "vector", StringComparison.OrdinalIgnoreCase)) return false;
+            return null;
+        }
+
+        /// <summary>Quante tinte, entro limiti che tengono il costo sotto controllo.</summary>
+        private static int NumeroColori(VectorizeQueueMessage message)
+        {
+            var n = message.Colori ?? ColoriPredefiniti;
+            return n < 2 ? 2 : n > 32 ? 32 : n;
+        }
+
+        /// <summary>
+        /// Quanto unire le tinte gemelle, entro limiti che evitano gli estremi assurdi. Null lascia
+        /// il valore misurato; zero disattiva la passata; oltre il tetto si fonderebbero colori che
+        /// l'occhio distingue benissimo.
+        /// </summary>
+        private static double Unione(VectorizeQueueMessage message)
+        {
+            var v = message.Unione ?? Tavolozza.UnionePredefinita;
+            if (v <= 0) return 0;
+            return v > 4000 ? 4000 : v;
+        }
+
+        /// <summary>
+        /// Ventiquattro tinte: e' il numero che serve, non un numero generoso. Un'illustrazione di
+        /// quelle che si vendono ha guance rosa, miele giallo, bollicine azzurre -- dettagli
+        /// piccoli ma quelli che l'occhio cerca per primi, e con otto tinte sparivano tutti.
+        ///
+        /// Otto era prudenza contro un difetto che non c'e' piu': quando le frange di contorno
+        /// rubavano una tinta su tre, aggiungerne significava aggiungere aloni. Misurato ora sulla
+        /// stessa illustrazione, guardando dove finisce il corallo delle guance (#ee8368):
+        ///     chieste 16 -> 11 tinte, guancia #ef964e (arancione) al 70%, 232 KB
+        ///     chieste 24 -> 12 tinte, guancia #ea7f64 (corallo)   al 98%, 229 KB
+        ///
+        /// E' un **tetto, non una promessa**: la tavolozza scarta le tinte che descrivono una
+        /// frangia di contorno invece di una zona, e su certi disegni sono quasi tutte -- misurato,
+        /// chiedendone 48 su un disegno a sei colori ne escono 6 e il file passa da 75 a 8 KB. Su
+        /// un'illustrazione con oggetti ombreggiati invece le tinte in piu' sono vere, ma sono
+        /// bande sempre piu' sottili della stessa ombreggiatura, e fanno crescere file e tempo.
+        ///
+        /// Va tenuto allineato al valore della web app (VectorizeOptions.NumeroColori): la stessa
+        /// immagine deve dare lo stesso file da qualunque parte sia stata lavorata.
+        /// </summary>
+        private const int ColoriPredefiniti = 24;
+
+        /// <summary>
+        /// Il tracciato: a colori o in bianco e nero, secondo quel che l'immagine e'.
         ///
         /// La soglia arriva da chi ha caricato l'immagine quando l'ha regolata guardando
         /// l'anteprima; altrimenti la calcola Otsu. Il valore scelto a mano vince perche' e' stato
         /// deciso vedendo il risultato, cosa che l'istogramma da solo non puo' sapere.
+        ///
+        /// A colori o in bianco e nero non e' una preferenza ma una proprieta' dell'immagine: chi
+        /// carica puo' imporla, e se non dice niente la si guarda invece di supporla. Una
+        /// silhouette tracciata a colori sprecherebbe otto passate per due tinte; un'illustrazione
+        /// a colori ridotta a silhouette perderebbe tutto tranne la sagoma.
         /// </summary>
         private static string[] Vectorize(string originalPath, string dir, string baseName, string functionDir,
-                                          int? requestedThreshold, ILogger log)
+                                          int? requestedThreshold, bool? forzaColore, int quantiColori, double unione, ILogger log)
         {
-            var bmpPath = Path.Combine(dir, baseName + ".trace.bmp");
             var svgPath = Path.Combine(dir, baseName + ".svg");
             var epsPath = Path.Combine(dir, baseName + ".eps");
             var jpgPath = Path.Combine(dir, baseName + ".jpg");
 
-            using (var src = Image.Load<Rgb24>(originalPath))
+            using (var originale = Image.Load<Rgba32>(originalPath))
             {
+                // Il canale alfa si legge **prima** di buttarlo via: dice quali pixel sono disegno
+                // e quali sono ritaglio (vedi Trasparenza).
+                var rgba = new byte[originale.Width * originale.Height * 4];
+                originale.CopyPixelDataTo(rgba);
+                var opachi = Trasparenza.Opachi(rgba);
+                var rgb = Trasparenza.SuBianco(rgba);
+
+                using var src = Image.LoadPixelData<Rgb24>(rgb, originale.Width, originale.Height);
+
+                var aColori = forzaColore ?? Tavolozza.HaColori(rgb, opachi: opachi);
+                if (aColori)
+                {
+                    TracciaAColori(src, rgb, opachi, svgPath, epsPath, jpgPath, quantiColori, unione, log);
+                    return new[] { svgPath, epsPath, jpgPath };
+                }
+
+                var bmpPath = Path.Combine(dir, baseName + ".trace.bmp");
                 var manual = requestedThreshold.HasValue
                           && requestedThreshold.Value >= 0
                           && requestedThreshold.Value <= 255;
                 var threshold = manual ? requestedThreshold.Value : ComputeOtsu(src);
-                using var bw = src.Clone();
-                bw.Mutate(x => x.BinaryThreshold(threshold / 255f));
+                using (var bw = src.Clone())
+                {
+                    bw.Mutate(x => x.BinaryThreshold(threshold / 255f));
 
-                // potrace traccia il nero su bianco: un'immagine prevalentemente scura darebbe
-                // il negativo della silhouette voluta.
-                if (BlackFraction(bw) > 0.5) bw.Mutate(x => x.Invert());
+                    // potrace traccia il nero su bianco: un'immagine prevalentemente scura darebbe
+                    // il negativo della silhouette voluta.
+                    if (BlackFraction(bw) > 0.5) bw.Mutate(x => x.Invert());
 
-                bw.SaveAsBmp(bmpPath, new BmpEncoder { BitsPerPixel = BmpBitsPerPixel.Pixel24 });
+                    bw.SaveAsBmp(bmpPath, new BmpEncoder { BitsPerPixel = BmpBitsPerPixel.Pixel24 });
 
-                using var jpg = bw.Clone();
-                Downscale(jpg, JpegLongEdge);
-                jpg.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
-                log.LogInformation($"Soglia {threshold} ({(manual ? "scelta a mano" : "Otsu")}), bitmap pronta per il tracciato");
+                    using var jpg = bw.Clone();
+                    Downscale(jpg, JpegLongEdge);
+                    jpg.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
+                }
+                log.LogInformation($"Silhouette, soglia {threshold} ({(manual ? "scelta a mano" : "Otsu")})");
+
+                RunPotrace(bmpPath, svgPath, "svg", functionDir, log);
+                RunPotrace(bmpPath, epsPath, "eps", functionDir, log);
+                try { File.Delete(bmpPath); } catch { /* best effort */ }
             }
 
-            RunPotrace(bmpPath, svgPath, "svg", functionDir, log);
-            RunPotrace(bmpPath, epsPath, "eps", functionDir, log);
-            try { File.Delete(bmpPath); } catch { /* best effort */ }
-
             return new[] { svgPath, epsPath, jpgPath };
+        }
+
+        /// <summary>
+        /// I confini fra le tinte, estratti **una volta sola** e condivisi fra le due campiture che
+        /// dividono (vedi Contorni). Non c'e' piu' una passata di potrace per colore: quella
+        /// disegnava ogni confine due volte, e le due copie non combaciavano.
+        ///
+        /// Il JPEG di consegna qui viene dall'**originale** e non dal tracciato: e' l'immagine che
+        /// il cliente vede nei risultati di ricerca, e mostrargli la versione ridotta a poche tinte
+        /// venderebbe peggio dell'originale senza alcun vantaggio.
+        /// </summary>
+        private static void TracciaAColori(Image<Rgb24> src, byte[] rgb, bool[] opachi,
+                                           string svgPath, string epsPath,
+                                           string jpgPath, int quantiColori, double unione,
+                                           ILogger log)
+        {
+            var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, quantiColori, unione, opachi);
+            // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte
+            // un pixel, e ricalcarle darebbe contorni ondulati.
+            Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height);
+            // Poi si toglie il pulviscolo. Va **dopo** la lisciatura, che nel raddrizzare i bordi
+            // puo' staccare qualche granello nuovo.
+            Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height,
+                                     Tavolozza.SogliaGranelli(src.Width, src.Height));
+            // Le sfumature si stimano sui pixel **originali**: nella mappa ridotta non ci sono piu'.
+            var rampe = Sfumatura.StimaTutte(rgb, tavolozza, src.Width, src.Height);
+
+            var contorni = Contorni.Estrai(tavolozza.Indici, tavolozza.Opaco,
+                                           src.Width, src.Height, tavolozza.Colori.Length);
+            var tinte = new List<VettorialeCondiviso.Tinta>(tavolozza.Colori.Length);
+            for (var i = 0; i < tavolozza.Colori.Length; i++)
+                tinte.Add(new VettorialeCondiviso.Tinta { Colore = tavolozza.Colori[i], Rampa = rampe[i] });
+
+            var svgFinale = VettorialeCondiviso.ComponiSvg(contorni, tinte, src.Width, src.Height);
+            var epsFinale = VettorialeCondiviso.ComponiEps(contorni, tinte, src.Width, src.Height);
+            if (svgFinale != null) File.WriteAllText(svgPath, svgFinale);
+            if (epsFinale != null) File.WriteAllText(epsPath, epsFinale);
+
+            using (var jpg = src.Clone())
+            {
+                Downscale(jpg, JpegLongEdge);
+                jpg.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
+            }
+
+            log.LogInformation($"Tracciato a colori: {tavolozza.Colori.Length} tinte, " +
+                               $"{contorni.Archi.Count} confini");
         }
 
         private static void Downscale(Image<Rgb24> img, int maxEdge)
@@ -215,7 +351,8 @@ namespace MJ.Classifier
                                      Math.Max(1, (int)Math.Round(img.Height * s))));
         }
 
-        private static void RunPotrace(string bmpPath, string outPath, string backend, string functionDir, ILogger log)
+        private static void RunPotrace(string bmpPath, string outPath, string backend, string functionDir,
+                                       ILogger log, int? sogliaGranelli = null)
         {
             var exe = Path.Combine(functionDir, "tools", "potrace", "potrace.exe");
             if (!File.Exists(exe)) throw new FileNotFoundException($"potrace non trovato in '{exe}'.", exe);
@@ -229,15 +366,24 @@ namespace MJ.Classifier
                 RedirectStandardOutput = true,
                 CreateNoWindow = true,
             };
+            // "svg-grezzo" e' un SVG intermedio -- la maschera di un colore -- che verra' ricomposto
+            // insieme agli altri: non va rifinito qui, o si riscriverebbero misure e gruppi su un
+            // pezzo che da solo non e' un file.
+            var grezzo = backend == "svg-grezzo";
+            var vettoriale = grezzo || backend == "svg";
+
             // Argomenti come lista e non come riga di comando: i percorsi vengono da nomi di file
             // scelti dall'autore, e una quotatura manuale si rompe al primo apice.
             foreach (var a in new[]
                      {
-                         bmpPath, backend == "svg" ? "-s" : "-e", "-o", outPath,
-                         "-t", TurdSize.ToString(inv),
+                         bmpPath, vettoriale ? "-s" : "-e", "-o", outPath,
+                         "-t", (sogliaGranelli ?? TurdSize).ToString(inv),
                          "-a", AlphaMax.ToString(inv),
                          "-O", OptTolerance.ToString(inv),
-                         "--tight",
+                         // La risoluzione decide quanto misura la tavola (vedi RisoluzionePer).
+                         // Qui NON si passa --tight: ritagliava la tavola attorno al disegno, e su
+                         // un'immagine da 1500x900 usciva una tavola da 299x198 -- misurato.
+                         "-r", RisoluzionePer(vettoriale ? "svg" : backend).ToString(inv),
                      })
                 psi.ArgumentList.Add(a);
 
@@ -246,7 +392,75 @@ namespace MJ.Classifier
             proc.WaitForExit();
             if (proc.ExitCode != 0)
                 throw new InvalidOperationException($"potrace ({backend}) exit {proc.ExitCode}: {stderr}");
+
+            if (backend == "svg") RifinisciSvg(outPath, log);
             log.LogInformation($"potrace {backend}: {new FileInfo(outPath).Length / 1024} KB");
+        }
+
+        /// <summary>
+        /// La risoluzione con cui potrace converte i pixel dell'immagine in misure della tavola.
+        ///
+        /// Non e' una preferenza: e' la conseguenza di come i due formati esprimono le dimensioni.
+        /// L'EPS puo' misurare **solo** in punti PostScript, e un punto vale 1/72 di pollice mentre
+        /// un pixel ne vale 1/96: chiedendo 96 dpi, un'immagine da 1500x900 pixel diventa una
+        /// tavola da 1125x675 punti, che sono esattamente 1500x900 pixel. L'SVG invece i pixel sa
+        /// dichiararli, e allora conviene 72 dpi -- cosi' le coordinate dei tracciati coincidono
+        /// con i pixel dell'originale e il file resta leggibile da chiunque lo apra.
+        /// </summary>
+        private static int RisoluzionePer(string backend) => backend == "svg" ? 72 : 96;
+
+        /// <summary>
+        /// Riscrive le misure dell'SVG in pixel e divide i tracciati in gruppi.
+        ///
+        /// Le misure: potrace le scrive in punti -- width="1500pt" su un'immagine da 1500 pixel.
+        /// Non e' sbagliato, ma 1500 punti sono 2000 pixel, e la tavola verrebbe piu' grande
+        /// dell'originale. Qui si tolgono le unita', che in SVG significa pixel, cosi' la tavola
+        /// misura quanto l'immagine da cui viene.
+        ///
+        /// I gruppi: potrace mette tutti i tracciati in un blocco unico, e in Illustrator non si
+        /// riesce a toccare una figura sola senza selezionarla a mano pezzo per pezzo.
+        /// </summary>
+        private static void RifinisciSvg(string svgPath, ILogger log)
+        {
+            try
+            {
+                var testo = File.ReadAllText(svgPath);
+                var misure = MisureInPixel(testo);
+                if (misure != null) testo = misure;
+
+                var gruppi = RaggruppaTracciati.Dividi(testo);
+                if (gruppi != null) testo = gruppi;
+
+                if (misure != null || gruppi != null) File.WriteAllText(svgPath, testo);
+            }
+            catch (Exception ex)
+            {
+                // L'SVG di potrace e' comunque valido: meglio consegnarlo grezzo che perderlo.
+                log.LogWarning(ex, "Rifinitura dell'SVG non riuscita");
+            }
+        }
+
+        private static readonly Regex IntestazioneSvg =
+            new("width=\"[^\"]*\"\\s+height=\"[^\"]*\"\\s+viewBox=\"(?<vb>[^\"]*)\"", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Sostituisce width/height in punti con gli stessi numeri in pixel, presi dal viewBox.
+        /// Restituisce null quando non c'e' niente da cambiare: se un domani potrace cambiasse
+        /// intestazione, il file resterebbe com'e' invece di essere corrotto.
+        /// </summary>
+        internal static string? MisureInPixel(string svg)
+        {
+            var m = IntestazioneSvg.Match(svg);
+            if (!m.Success) return null;
+
+            var vb = m.Groups["vb"].Value.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            if (vb.Length != 4) return null;
+            if (!double.TryParse(vb[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ||
+                !double.TryParse(vb[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var h))
+                return null;
+
+            var sostituito = $"width=\"{Math.Round(w)}\" height=\"{Math.Round(h)}\" viewBox=\"{m.Groups["vb"].Value}\"";
+            return svg.Remove(m.Index, m.Length).Insert(m.Index, sostituito);
         }
 
         /// <summary>

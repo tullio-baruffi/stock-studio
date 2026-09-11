@@ -66,7 +66,9 @@ public class JobsController : ControllerBase
     [HttpPost("handoff")]
     [RequestSizeLimit(500_000_000)]
     public async Task<IActionResult> Handoff([FromForm] List<IFormFile> files, [FromForm] string? mode,
-                                             [FromForm] List<string>? thresholds, CancellationToken ct)
+                                             [FromForm] List<string>? thresholds, [FromForm] int? colori,
+                                             [FromForm] double? unione,
+                                             CancellationToken ct)
     {
         if (files == null || files.Count == 0) return BadRequest("Nessun file caricato.");
         if (!_handoff.Enabled)
@@ -88,7 +90,7 @@ public class JobsController : ControllerBase
                     threshold = t;
 
                 await using var stream = f.OpenReadStream();
-                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold, ct);
+                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold, colori, unione, ct);
                 accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold });
             }
             catch (Exception ex)

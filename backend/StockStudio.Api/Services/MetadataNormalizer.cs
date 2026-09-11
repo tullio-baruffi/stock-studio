@@ -24,7 +24,7 @@ public class MetadataNormalizer
     public MetadataResult Normalize(string? title, string? description, IEnumerable<string>? keywords,
                                     string? category, int maxKeywords)
     {
-        var cleanTitle = string.IsNullOrWhiteSpace(title) ? "Vector Silhouette" : title.Trim();
+        var cleanTitle = string.IsNullOrWhiteSpace(title) ? "Untitled" : title.Trim();
         var cleanDescription = string.IsNullOrWhiteSpace(description) ? cleanTitle : description.Trim();
         var cleanCategory = string.IsNullOrWhiteSpace(category) ? "Graphic Resources" : category.Trim();
 
@@ -47,10 +47,33 @@ public class MetadataNormalizer
         }
 
         var raw = list.Count;
-        list = AdobeStockRules.Enforce(list, cleanTitle, "vector", maxKeywords);
+        list = AdobeStockRules.Enforce(list, cleanTitle, Medium(list), maxKeywords);
         if (list.Count != raw)
             _log.LogDebug("Keyword normalizzate secondo la guida Adobe: {Before} -> {After}", raw, list.Count);
 
         return new MetadataResult(cleanTitle, cleanDescription, list, cleanCategory);
+    }
+
+    /// <summary>
+    /// Che tipo di immagine ha descritto il modello, letto da quello che ha scritto lui.
+    ///
+    /// Qui c'era scritto "vector" per tutti, e le regole di Adobe inserivano d'ufficio 'vector' e
+    /// 'graphic' in quarta e quinta posizione anche sulla fotografia di una partita di polo. Su una
+    /// foto quelle due parole sono keyword irrilevanti — uno dei motivi di rifiuto dichiarati — e
+    /// occupavano per giunta due delle sette posizioni che pesano.
+    ///
+    /// Il modello il mestiere lo sa fare: al prompt che gli chiede di riconoscere il supporto
+    /// rispondeva già "photograph", mentre il codice lo contraddiceva subito dopo. Quindi non
+    /// serve indovinare: basta leggere la risposta.
+    /// </summary>
+    private static string Medium(IReadOnlyList<string> keywords)
+    {
+        bool Ha(params string[] parole) => parole.Any(p => keywords.Contains(p, StringComparer.OrdinalIgnoreCase));
+
+        // La fotografia si dichiara per prima: se il modello l'ha riconosciuta, non c'è altro da
+        // decidere, e nessun termine di supporto va aggiunto.
+        if (Ha("photograph", "photo", "photography")) return "raster";
+        if (Ha("vector", "icon")) return "vector";
+        return "raster";
     }
 }

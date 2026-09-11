@@ -38,8 +38,49 @@ const IMAGE_TYPE = /image\/(jpe?g|png|webp|tiff?)/i;
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${++seq}`;
 
+/** Il nome della modalità in italiano, scritto in un posto solo perché compare in tre punti. */
+function nomeModalita(mode: "vector" | "colore" | "raster"): string {
+  return mode === "vector" ? "vettoriale in bianco e nero"
+    : mode === "colore" ? "vettoriale a colori"
+    : "immagine";
+}
+
 const fmtSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/**
+ * Quanto unire le tinte che descrivono la stessa cosa.
+ *
+ * Tre posizioni con un nome, invece di un cursore su un numero astratto: il valore grezzo non
+ * significa niente per chi guarda un disegno, e le posizioni intermedie non corrisponderebbero a
+ * nessuna scelta reale.
+ *
+ * I valori vengono dalla misura su illustrazioni vere del portfolio, provando la scala completa da
+ * 0 a 2200. Due cose che si sono viste e che spiegano perché le posizioni sono queste:
+ * - sotto 700 non succede niente, quindi non ha senso una posizione più timida di «prudente»;
+ * - **sopra la consigliata non cambia più nulla**, perché a limitare la fusione non è questa
+ *   soglia ma il controllo sui pixel dell'originale e il tetto percettivo dei 22 livelli. Una
+ *   posizione «decisa» sarebbe stata un pulsante che non fa niente, e non è stata messa.
+ */
+const UNIONE_CONSIGLIATA = 1300;
+
+const UNIONI: { valore: number; nome: string; spiega: string }[] = [
+  {
+    valore: 0,
+    nome: "Nessuna",
+    spiega: "Nessuna unione: la tavolozza resta com'esce. Serve a vedere il difetto in chiaro quando qualcosa non torna.",
+  },
+  {
+    valore: 900,
+    nome: "Prudente",
+    spiega: "Unisce solo i casi più evidenti. Da usare se un disegno perde una sfumatura che invece c'era.",
+  },
+  {
+    valore: UNIONE_CONSIGLIATA,
+    nome: "Consigliata",
+    spiega: "Il valore misurato: toglie i manti a chiazze e i contorni tracciati due volte, senza toccare le ombreggiature vere. Alzarlo oltre non cambia il risultato: a limitare la fusione è il controllo sui pixel dell'originale, non questa soglia.",
+  },
+];
 
 export default function UploadView({
   pipeline,
@@ -48,7 +89,30 @@ export default function UploadView({
   pipeline: PipelineStatus | null;
   onNavigate?: (tab: "backoffice" | "monitor") => void;
 }) {
-  const [mode, setMode] = useState<"vector" | "raster">("vector");
+  const [mode, setMode] = useState<"vector" | "colore" | "raster">("vector");
+  /**
+   * Quante tinte nel tracciato a colori.
+   *
+   * Sedici e' il numero misurato, non una preferenza: sotto, spariscono i dettagli piccoli e
+   * colorati -- guance, miele, bollicine -- che sono poi quelli che l'occhio cerca per primi.
+   *
+   * E' un tetto, non una promessa. Le tinte che descrivono una frangia di contorno invece di una
+   * zona vengono scartate, e su certi disegni sono quasi tutte: misurato, chiedendone 48 ne
+   * escono 6. Su un'illustrazione con oggetti ombreggiati invece le tinte in piu' vanno a
+   * spezzare l'ombreggiatura in bande sempre piu' sottili -- sono vere, ma il file cresce senza
+   * che si veda granche'.
+   */
+  const [colori, setColori] = useState(24);
+  /**
+   * Quanto unire le tinte che descrivono la stessa cosa.
+   *
+   * È l'unico numero **empirico** della vettorializzazione a colori: gli altri sono limiti
+   * percettivi o cambi di segno, questo è un taglio scelto guardando i dati di 52 illustrazioni.
+   * Sta qui, e non solo nella configurazione, perché è quello che potrebbe aver bisogno di una
+   * correzione su un disegno diverso da quelli su cui è stato misurato — e correggerlo dalla
+   * pagina di caricamento costa un clic invece di un rilascio.
+   */
+  const [unione, setUnione] = useState(UNIONE_CONSIGLIATA);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [delivering, setDelivering] = useState(false);
   const [result, setResult] = useState<HandoffResponse | null>(null);
@@ -109,7 +173,9 @@ export default function UploadView({
       const res = await api.handoff(
         staged.map((s) => s.file),
         mode,
-        mode === "vector" ? staged.map((s) => s.threshold) : undefined
+        mode === "vector" ? staged.map((s) => s.threshold) : undefined,
+        mode === "colore" ? colori : undefined,
+        mode === "colore" ? unione : undefined
       );
 
       const failedBy = new Map((res.errors ?? []).map((e) => [e.file, e.error]));
@@ -150,8 +216,12 @@ export default function UploadView({
       <div className="modebar">
         <span className="muted small">Cosa vuoi consegnare?</span>
         <button className={`modebtn ${mode === "vector" ? "on" : ""}`} onClick={() => setMode("vector")}>
-          <strong>◆ Vettoriale</strong>
-          <span>traccia in SVG + EPS, più il JPG</span>
+          <strong>◆ Vettoriale B/N</strong>
+          <span>silhouette: una soglia, un tracciato</span>
+        </button>
+        <button className={`modebtn ${mode === "colore" ? "on" : ""}`} onClick={() => setMode("colore")}>
+          <strong>◈ Vettoriale a colori</strong>
+          <span>un tracciato per tinta, SVG + EPS a colori</span>
         </button>
         <button className={`modebtn ${mode === "raster" ? "on" : ""}`} onClick={() => setMode("raster")}>
           <strong>▣ Immagine</strong>
@@ -171,7 +241,7 @@ export default function UploadView({
         role="button"
         tabIndex={0}
         aria-disabled={delivering}
-        aria-label={`Seleziona immagini. Modalità ${mode === "vector" ? "vettoriale" : "immagine"}.`}
+        aria-label={`Seleziona immagini. Modalità ${nomeModalita(mode)}.`}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -210,7 +280,9 @@ export default function UploadView({
           </div>
           <div className="hint">
             {mode === "vector"
-              ? "Modalità vettoriale · la pipeline produce SVG, EPS e JPG"
+              ? "Modalità vettoriale in bianco e nero · silhouette in SVG, EPS e JPG"
+              : mode === "colore"
+              ? `Modalità vettoriale a colori · ${colori} tinte · unione ${UNIONI.find((u) => u.valore === unione)?.nome.toLowerCase() ?? "consigliata"} · SVG ed EPS a colori`
               : "Modalità immagine · nessuna vettorializzazione, l'immagine resta com'è"}
           </div>
         </div>
@@ -232,7 +304,7 @@ export default function UploadView({
           </strong>
           <p>Da qui in poi procede da sola: puoi chiudere il browser o spegnere l'applicazione senza fermarla.</p>
           <ol className="handoff-steps">
-            <li>{mode === "vector" ? "Tracciato in SVG ed EPS" : "Preparazione del JPG"}</li>
+            <li>{mode === "raster" ? "Preparazione del JPG" : "Tracciato in SVG ed EPS"}</li>
             <li>Classificazione e metadati (titolo, descrizione, keyword)</li>
             <li>Revisione nel Backoffice, poi invio al marketplace</li>
           </ol>
@@ -255,7 +327,7 @@ export default function UploadView({
           <div className="toolbar">
             <div>
               {staged.length} {staged.length === 1 ? "immagine pronta" : "immagini pronte"} ·{" "}
-              {mode === "vector" ? "vettoriale" : "immagine"}
+              {nomeModalita(mode)}
             </div>
             <div className="actions">
               <button className="btn" onClick={() => setStaged([])} disabled={delivering}>
@@ -284,6 +356,59 @@ export default function UploadView({
               >
                 Tutte automatiche
               </button>
+            </div>
+          )}
+
+          {mode === "colore" && (
+            <div className="bulkbar">
+              <span className="muted small">
+                Quante tinte: <strong>{colori}</strong>. Servono a non perdere i dettagli piccoli e
+                colorati, come una guancia rosa o un riflesso azzurro. È un tetto, non una promessa:
+                le tinte che descrivono una frangia di contorno invece di una zona vengono scartate,
+                e su certi disegni sono quasi tutte — chiedendone quarantotto ne escono sei. Su
+                un'illustrazione con oggetti ombreggiati, invece, le tinte in più vanno a spezzare
+                l'ombreggiatura in bande sempre più sottili: sono vere, ma il file cresce senza che
+                si veda granché. Qui non c'è anteprima perché sarebbe una ricostruzione
+                approssimata — e decidere su un'anteprima falsa è peggio che non averla.
+              </span>
+              <input
+                type="range"
+                min={2}
+                max={32}
+                value={colori}
+                disabled={delivering}
+                onChange={(e) => setColori(Number(e.target.value))}
+                aria-label="Numero di tinte del tracciato a colori"
+              />
+              <button className="btn small" onClick={() => setColori(24)} disabled={delivering || colori === 24}>
+                24 (consigliate)
+              </button>
+            </div>
+          )}
+
+          {mode === "colore" && (
+            <div className="bulkbar">
+              <span className="muted small">
+                <strong>Unione delle tinte gemelle.</strong> Quando due tinte quasi identiche si
+                dividono la stessa campitura, il disegno esce a chiazze e il contorno viene tracciato
+                due volte. Questa passata le rimette insieme, e un secondo controllo sui pixel
+                dell'originale le lascia separate se lì c'è davvero un bordo.{" "}
+                {UNIONI.find((u) => u.valore === unione)?.spiega}
+              </span>
+              <div className="scelte" role="group" aria-label="Quanto unire le tinte gemelle">
+                {UNIONI.map((u) => (
+                  <button
+                    key={u.valore}
+                    className="btn small"
+                    onClick={() => setUnione(u.valore)}
+                    disabled={delivering}
+                    title={u.spiega}
+                    aria-pressed={u.valore === unione}
+                  >
+                    {u.nome}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

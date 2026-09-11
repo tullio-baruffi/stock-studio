@@ -2,6 +2,8 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using StockStudio.Api.Domain;
 
+using StockStudio.Shared.Vettoriale;
+
 namespace StockStudio.Api.Services;
 
 /// <summary>
@@ -27,7 +29,7 @@ public class PipelineService
     /// <summary>Persists the uploaded originals and registers a job with all items queued.</summary>
     public async Task<Job> CreateJob(IReadOnlyList<(string fileName, Stream content)> files, string mode, CancellationToken ct)
     {
-        var job = new Job { Mode = mode is "raster" ? "raster" : "vector" };
+        var job = new Job { Mode = Modalita.Normalizza(mode) };
         var originalDir = Path.Combine(_store.JobDir(job.Id), "original");
         Directory.CreateDirectory(originalDir);
 

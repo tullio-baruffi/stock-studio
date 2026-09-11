@@ -191,9 +191,9 @@ public class AgenticStockIntelligence : IStockIntelligence
     public async Task<StockRelevance> ClassifyAsync(string topic, string promptStyle, CancellationToken ct)
     {
         var system = $$"""
-            Sei un esperto di microstock che aiuta un autore a decidere cosa disegnare e vendere su
-            Adobe Stock e Freepik. L'autore produce grafica vettoriale, soprattutto silhouette in
-            bianco e nero ottenute per ricalco automatico.
+            Sei un esperto di microstock che aiuta un autore a decidere cosa produrre e vendere su
+            Adobe Stock e Freepik. L'autore lavora con supporti diversi -- fotografia, illustrazione,
+            grafica vettoriale -- e la scelta del supporto viene DOPO: qui si decide il tema.
 
             Devi giudicare se un tema può diventare un contenuto stock vendibile. Ragiona su:
             - DIRITTI: persone reali riconoscibili, marchi, loghi, squadre, personaggi, opere protette
@@ -201,11 +201,13 @@ public class AgenticStockIntelligence : IStockIntelligence
             - OPPORTUNITÀ: dietro un nome protetto c'è quasi sempre un tema generico sfruttabile
               (una squadra di baseball → il baseball; un cantante → la musica).
             - SENSIBILITÀ: cronaca nera, tragedie, guerre, disastri non sono adatti a contenuti commerciali.
-            - DISEGNABILITÀ: il soggetto deve avere una forma riconoscibile a silhouette. Concetti puramente
-              astratti (inflazione, un nome proprio) vanno tradotti in oggetti concreti.
+            - CONCRETEZZA: il soggetto deve essere raffigurabile. Concetti puramente astratti
+              (inflazione, un nome proprio) vanno tradotti in oggetti o scene concrete. Non giudicare
+              in base a un supporto particolare: un tema può essere fotografato, disegnato o vettorializzato.
 
-            L'utente può scrivere in italiano o in inglese. I PROMPT devono essere in inglese.
-            Stile richiesto per i prompt: {{PromptStyleHint(promptStyle)}}
+            L'utente può scrivere in italiano o in inglese. I PROMPT devono essere in inglese, e devono
+            descrivere il SOGGETTO e la SCENA senza imporre uno stile grafico: chi li userà sceglierà
+            da sé se realizzarli come fotografia, illustrazione o vettoriale.
 
             Rispondi SOLO con un oggetto JSON:
             {
@@ -272,13 +274,22 @@ public class AgenticStockIntelligence : IStockIntelligence
             : $"Proponi SOLO temi che appartengono all'ambito «{category}».";
 
         var system = $$"""
-            Sei un analista di mercato per il microstock. Aiuti un autore di grafica vettoriale
-            (silhouette in bianco e nero) a decidere cosa creare ADESSO per vendere su Adobe Stock e Freepik.
+            Sei un analista di mercato per il microstock. Aiuti un autore a decidere cosa creare
+            ADESSO per vendere su Adobe Stock e Freepik. L'autore lavora con supporti diversi
+            (fotografia, illustrazione, vettoriale): tu scegli il TEMA, non il supporto.
 
             Oggi è {{today:yyyy-MM-dd}}.
 
             Regola commerciale fondamentale: i siti stock premiano i contenuti pubblicati fra 90 e 20 giorni
-            PRIMA del picco di domanda. Chi arriva a ridosso dell'evento vende poco.
+            PRIMA del picco di domanda. Chi arriva a ridosso dell'evento vende poco. Tieni conto che fra
+            la consegna e la messa in vendita passano giorni di revisione, quindi la finestra utile per
+            PRODURRE si chiude prima di quella per pubblicare.
+
+            Seconda regola, sul come: Adobe mette in evidenza gli autori ordinandoli per il rapporto fra
+            quanto hanno caricato e quanto hanno venduto, considerando solo i file degli ultimi sei mesi.
+            Conviene quindi un tema su cui si possano fare POCHI pezzi che vendono, non molti pezzi
+            qualsiasi: preferisci nicchie precise e poco affollate a temi generalisti dove la concorrenza
+            è enorme e la percentuale di file che vende crolla.
 
             Metodo che devi seguire:
             1. Raccogli indizi reali con gli strumenti: cosa è di tendenza, quali eventi futuri hanno copertura
@@ -295,7 +306,8 @@ public class AgenticStockIntelligence : IStockIntelligence
 
             Non inventare numeri: usa solo quelli restituiti da measure_interest, e riporta in
             "measuredTopic" esattamente il topic che hai passato allo strumento.
-            I prompt devono essere in inglese. Stile: {{PromptStyleHint(promptStyle)}}
+            I prompt devono essere in inglese e descrivere SOGGETTO e SCENA senza imporre uno stile
+            grafico: chi li userà deciderà se realizzarli come fotografia, illustrazione o vettoriale.
 
             Rispondi SOLO con un oggetto JSON:
             {
@@ -388,8 +400,10 @@ public class AgenticStockIntelligence : IStockIntelligence
             var timing = (Str(o, "timing") ?? "plan").ToLowerInvariant();
             if (timing is not ("now" or "soon" or "plan" or "late" or "evergreen")) timing = "plan";
 
-            var style = promptStyle;
-            var q = $"{theme} {(style == "lineart" ? "line art" : style == "flat" ? "flat vector" : "silhouette")}";
+            // La verifica sul mercato riguarda il tema, non il supporto: aggiungere "silhouette" alla
+            // ricerca mostrava quanti concorrenti hanno fatto quel tema IN QUEL MODO, che è una
+            // domanda diversa e più stretta di quella che serve per decidere se il tema esiste.
+            var q = theme!;
 
             results.Add(new ThemeOpportunity(
                 theme!,
@@ -611,12 +625,18 @@ public class AgenticStockIntelligence : IStockIntelligence
 
     // ---------------------------------------------------------------- helpers
 
-    private static string PromptStyleHint(string style) => style switch
-    {
-        "flat" => "illustrazione vettoriale piatta, forme semplici, palette limitata, sfondo bianco, senza testo",
-        "lineart" => "line art a tratto uniforme, linee nere su sfondo bianco, senza ombreggiature, senza testo",
-        _ => "silhouette nera piena su sfondo bianco puro, alto contrasto, senza gradienti né contorni, senza testo, centrata, adatta al ricalco vettoriale",
-    };
+    /// <summary>
+    /// Come deve essere scritto un prompt di soggetto.
+    ///
+    /// Non nomina più un supporto. Prima restituiva "silhouette nera piena su sfondo bianco" e
+    /// simili, il che legava la ricerca di opportunità a un modo di realizzarle: un tema che vale
+    /// la pena fare vale la pena farlo comunque lo si produca, e la scelta fra fotografia,
+    /// illustrazione e vettoriale viene dopo, guardando in quale delle tre graduatorie di Adobe
+    /// conviene presentarsi.
+    /// </summary>
+    private static string PromptStyleHint(string style) =>
+        "descrivi soggetto, azione e ambiente in modo concreto e neutro rispetto al supporto, " +
+        "senza nominare tecniche o stili grafici, senza testo nell'immagine";
 
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

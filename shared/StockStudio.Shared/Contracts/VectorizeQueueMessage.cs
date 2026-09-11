@@ -17,8 +17,31 @@ namespace StockStudio.Shared.Contracts
         /// <summary>Name the author uploaded, kept for the deliverables and the metadata hint.</summary>
         public string? OriginalFileName { get; set; }
 
-        /// <summary>"vector" traces the silhouette; "raster" ships the picture as it is.</summary>
+        /// <summary>
+        /// Cosa fare del file: "vector" traccia in bianco e nero, "colore" traccia a colori,
+        /// "raster" consegna l'immagine com'e'. Vuoto o sconosciuto vale "auto": si guarda
+        /// l'immagine e si decide fra silhouette e colori.
+        /// </summary>
         public string? Mode { get; set; }
+
+        /// <summary>
+        /// Quante tinte nel tracciato a colori. Null usa il valore predefinito.
+        ///
+        /// Ogni tinta e' una passata di potrace: il numero non e' una preferenza estetica ma la
+        /// misura di quanto lavoro si sta chiedendo.
+        /// </summary>
+        public int? Colori { get; set; }
+
+        /// <summary>
+        /// Quanto insistere nel rimettere insieme le tinte che descrivono la stessa cosa: un manto
+        /// ombreggiato diviso fra due marroni indistinguibili, un contorno tracciato due volte.
+        /// Null usa il valore predefinito, zero disattiva del tutto quella passata.
+        ///
+        /// Viaggia nel messaggio invece di stare nella configurazione della Function perche' e' una
+        /// scelta che si fa **guardando l'immagine**, non una proprieta' dell'installazione: due
+        /// disegni consegnati nello stesso minuto possono volerne due valori diversi.
+        /// </summary>
+        public double? Unione { get; set; }
 
         /// <summary>
         /// Luminance cut, 0-255, chosen by the author while looking at the preview in the browser.

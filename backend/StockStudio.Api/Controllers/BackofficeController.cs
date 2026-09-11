@@ -1,16 +1,51 @@
 using Microsoft.AspNetCore.Mvc;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Processing;
 using Microsoft.Extensions.Options;
+using StockStudio.Api.Domain;
 using StockStudio.Api.Services;
+using StockStudio.Api.Services.Feedback;
 using StockStudio.Api.Services.Integration;
+using StockStudio.Api.Services.Scoring;
 
 namespace StockStudio.Api.Controllers;
 
 public record UpdateSpItemRequest(string? title, string? description, string? tags);
+
+/// <summary>
+/// Una correzione fatta in revisione, con i valori di partenza per poterla leggere come diff.
+/// I valori generati arrivano dal client perche' e' l'unico a sapere cosa c'era sullo schermo
+/// prima delle modifiche: SharePoint conserva solo l'ultimo stato, non quello proposto dall'AI.
+/// </summary>
+public record BackofficeFeedbackRequest(
+    string? generatedTitle,
+    string? generatedDescription,
+    string? generatedKeywords,
+    string? title,
+    string? description,
+    string? keywords,
+    string? note);
 public record MoveSpItemRequest(string targetLibrary);
 public record RegenerateRequest(List<int> ids);
+
+/// <summary>
+/// Esito di una rivettorializzazione: il peso dei file prima e dopo, perché è il modo più diretto
+/// per vedere che qualcosa è davvero cambiato senza aprire il disegno.
+/// </summary>
+public record RivettorializzaResult(
+    bool ok,
+    int id,
+    string fileName,
+    string? error = null,
+    /// <summary>Quali consegne sono state riscritte, con il peso vecchio e nuovo.</summary>
+    IReadOnlyList<ConsegnaRiscritta>? consegne = null,
+    /// <summary>Vero se il tracciato è avvenuto a colori, falso se in bianco e nero.</summary>
+    bool aColori = false,
+    /// <summary>
+    /// Vero quando l'immagine è già su Adobe: il file nuovo vive qui, non là.
+    /// Per i contributor non esiste un'API, quindi il ricarico sul portale resta a mano.
+    /// </summary>
+    bool daRiportare = false);
+
+public record ConsegnaRiscritta(string tipo, string fileName, int kbPrima, int kbDopo);
 
 /// <summary>Outcome of one re-description, with the previous title so the change is visible.</summary>
 public record RegenerateResult(
@@ -22,7 +57,13 @@ public record RegenerateResult(
     string? previousTitle = null,
     int previousTitleLength = 0,
     int previousKeywords = 0,
-    object? item = null);
+    object? item = null,
+    /// <summary>
+    /// True quando l'immagine è già su Adobe: i metadati nuovi vivono qui, non là.
+    /// Per i contributor non esiste un'API -- lo dichiara Adobe -- quindi il passaggio finale
+    /// resta a mano, e chi ha appena rigenerato deve saperlo subito.
+    /// </summary>
+    bool daRiportare = false);
 
 /// <summary>
 /// SharePoint back-office: browse, review and approve the pipeline's files without opening
@@ -44,17 +85,43 @@ public class BackofficeController : ControllerBase
     private readonly PipelineSettings _s;
     private readonly StockValidator _validator;
     private readonly IMetadataProvider _metadata;
+    private readonly IVectorizer _vettorizzatore;
+    private readonly MetadataFeedbackStore _feedback;
+    private readonly PunteggioStore _punteggi;
+    private readonly Punteggiatore _punteggiatore;
     private readonly ILogger<BackofficeController> _log;
 
     public BackofficeController(SharePointStore sp, IOptions<PipelineSettings> s,
                                 StockValidator validator, IMetadataProvider metadata,
+                                IVectorizer vettorizzatore,
+                                MetadataFeedbackStore feedback, PunteggioStore punteggi,
+                                Punteggiatore punteggiatore,
                                 ILogger<BackofficeController> log)
     {
         _sp = sp;
         _s = s.Value;
         _validator = validator;
         _metadata = metadata;
+        _vettorizzatore = vettorizzatore;
+        _feedback = feedback;
+        _punteggi = punteggi;
+        _punteggiatore = punteggiatore;
         _log = log;
+    }
+
+    /// <summary>
+    /// Confronta il punteggio appena calcolato con quello depositato nella libreria, e se non
+    /// corrispondono chiede che venga riscritto.
+    ///
+    /// I metadati non cambiano solo da qui: la Logic App che li genera scrive direttamente su
+    /// SharePoint, senza passare da questa applicazione. Un punteggio aggiornato soltanto nei
+    /// nostri punti di scrittura resterebbe vuoto su ogni immagine appena lavorata, e sbagliato su
+    /// ogni immagine rigenerata fuori. Ricalcolarlo a ogni lettura e correggerlo quando serve è
+    /// l'unico modo che non dipende da chi ha scritto per ultimo.
+    /// </summary>
+    private void AllineaPunteggio(string library, SharePointItem i, int calcolato)
+    {
+        if (i.PunteggioSalvato != calcolato) _punteggi.Segnala(library, i.Id, calcolato);
     }
 
     private string SiteRoot
@@ -101,48 +168,172 @@ public class BackofficeController : ControllerBase
         return Ok(new { ok = true, results });
     }
 
+    /// <summary>
+    /// Prepara la colonna del punteggio nelle librerie. Ripetibile senza danni.
+    /// </summary>
+    [HttpPost("punteggio/colonna")]
+    public IActionResult PreparaColonnaPunteggio([FromQuery] string? library = null)
+    {
+        if (!_s.Enabled) return BadRequest("Pipeline disabilitata.");
+
+        var targets = string.IsNullOrWhiteSpace(library) ? Stages.Keys.ToArray() : new[] { library };
+        var results = new List<object>();
+        foreach (var lib in targets)
+        {
+            if (!Stages.ContainsKey(lib)) { results.Add(new { library = lib, ok = false, message = "Libreria non gestita." }); continue; }
+            try { results.Add(new { library = lib, ok = true, message = _sp.EnsureScoreColumn(lib) }); }
+            catch (Exception ex) { results.Add(new { library = lib, ok = false, message = ex.Message }); }
+        }
+        return Ok(new { ok = true, results });
+    }
+
+    /// <summary>
+    /// Se il filtro per punteggio può già usare l'indice, che non ha la soglia dei 5.000.
+    ///
+    /// Serve a sapere quando il collegamento della colonna a una proprietà numerica dell'indice è
+    /// diventato operativo: succede da sé dopo che il crawler ha riletto la libreria, e senza un
+    /// modo di chiederlo si potrebbe solo tirare a indovinare.
+    /// </summary>
+    [HttpGet("punteggio/indice")]
+    public IActionResult IndicePunteggio([FromQuery] string library = "ImagesSent")
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+        try
+        {
+            var pronto = _sp.PunteggioIndicizzato(library);
+            return Ok(new
+            {
+                ok = true,
+                library,
+                indiceNumericoPronto = pronto,
+                nota = pronto
+                    ? "Le fasce di punteggio possono essere larghe quanto si vuole: l'indice non ha soglie."
+                    : "Le fasce restano limitate a 5.000 immagini ciascuna: la colonna non è ancora "
+                      + "collegata a una proprietà numerica dell'indice.",
+            });
+        }
+        catch (Exception ex) { return Ok(new { ok = false, error = ex.Message }); }
+    }
+
+    /// <summary>Quanti punteggi sono stati depositati, e se questa libreria è già stata riempita per intero.</summary>
+    ///
+    /// La completezza la dichiara il servizio di sfondo, che sta scorrendo le librerie e sa dove è
+    /// arrivato. Prima la si chiedeva a SharePoint con un &lt;IsNull&gt; sulla colonna, e su
+    /// ImagesSent quella query superava la soglia: la risposta non arrivava proprio dalla libreria
+    /// dove l'avviso serve di più. Dopo un riavvio il servizio riparte da zero e per qualche minuto
+    /// dichiara "non ancora completa" anche dove lo è: un avviso di troppo, che è il verso giusto
+    /// in cui sbagliare.
+    /// </summary>
+    [HttpGet("punteggio/stato")]
+    public IActionResult StatoPunteggi([FromQuery] string? library = null)
+    {
+        object? colonna = null;
+        if (!string.IsNullOrWhiteSpace(library) && Stages.ContainsKey(library))
+            colonna = new { library, completa = _punteggi.Completa(library) };
+        return Ok(new { ok = true, coda = _punteggi.Stato(), lotti = _sp.StatoLotti(), colonna });
+    }
+
+    /// <summary>
+    /// Riempie la colonna del punteggio scorrendo la libreria, un tratto per volta.
+    ///
+    /// A lotti e con un cursore, non tutto in una volta: diecimila file sono diecimila scritture, e
+    /// una richiesta che dura mezz'ora verrebbe interrotta dal server molto prima di finire, senza
+    /// lasciare traccia di dove si era arrivati. Così invece ogni chiamata fa un tratto, dice dove
+    /// si è fermata, e chi la guida decide se proseguire.
+    ///
+    /// Scrive solo dove il valore depositato non corrisponde: ripassare su un tratto già fatto non
+    /// costa scritture, quindi l'operazione si può ripetere senza pensarci.
+    /// </summary>
+    [HttpPost("punteggio/riempi")]
+    public IActionResult RiempiPunteggi([FromQuery] string library,
+                                        [FromQuery] string? pageToken = null,
+                                        [FromQuery] int pagine = 4,
+                                        [FromQuery] int take = 100)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        var letti = 0;
+        var gruppi = 0;
+        var daScrivere = new Dictionary<int, int>();
+        var cursore = pageToken;
+        var fine = false;
+
+        try
+        {
+            for (var p = 0; p < Math.Clamp(pagine, 1, 20); p++)
+            {
+                var page = _sp.ListItems(library, Math.Clamp(take, 1, 100), cursore, null, null);
+                letti += page.Items.Count;
+
+                foreach (var group in _punteggiatore.Raggruppa(library, page.Items))
+                {
+                    gruppi++;
+                    var i = Punteggiatore.PortatoreDi(group);
+                    var v = _validator.Validate(i.Title, i.Description, Punteggiatore.KeywordDi(i.Tags), Punteggiatore.ModoDi(group));
+                    if (i.PunteggioSalvato != v.Score) daScrivere[i.Id] = v.Score;
+                }
+
+                cursore = page.NextPageToken;
+                if (string.IsNullOrEmpty(cursore)) { fine = true; break; }
+            }
+
+            // Scrittura in linea, non in coda: qui si sa quanti ne restano e si vuole che il
+            // conteggio restituito sia vero, non una promessa.
+            var scritti = _sp.SetScores(library, daScrivere);
+
+            return Ok(new
+            {
+                ok = true,
+                library,
+                letti,
+                gruppi,
+                giaCorretti = gruppi - daScrivere.Count,
+                scritti,
+                nonScritti = daScrivere.Count - scritti,
+                fine,
+                pageToken = fine ? null : cursore,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Riempimento punteggi non riuscito su {Library}", library);
+            return Ok(new { ok = false, error = ex.Message, library, letti, pageToken = cursore });
+        }
+    }
+
     /// <summary>One page of a stage, with the Adobe/Freepik score computed for each item.</summary>
     [HttpGet("items")]
     public IActionResult Items([FromQuery] string library = "ImagesToClassify",
                                [FromQuery] int take = 24,
                                [FromQuery] string? pageToken = null,
                                [FromQuery] string? search = null,
-                               [FromQuery] string? field = null)
+                               [FromQuery] string? field = null,
+                               [FromQuery] int? punteggioMin = null,
+                               [FromQuery] int? punteggioMax = null)
     {
         var bad = Guard(library);
         if (bad != null) return bad;
 
         try
         {
-            var page = _sp.ListItems(library, take, pageToken, search, field);
+            var page = _sp.ListItems(library, take, pageToken, search, field, punteggioMin, punteggioMax);
 
-            // Una riga per immagine, non per file. Il percorso durevole deposita SVG, EPS e JPEG
-            // nella stessa cartella e con lo stesso nome: mostrarli come tre elementi indipendenti
-            // fa sembrare tre lavori quello che ne e' uno.
-            //
-            // Il gruppo e' cartella *e* nome. La sola cartella non basta: nella libreria storica ce
-            // ne sono che contengono decine di immagini diverse, e raggruppare per cartella le
-            // riduceva tutte a una riga sola -- ventitre' immagini sparite dalla vista, e cancellate
-            // insieme alla prima se si fosse premuto Elimina.
-            //
-            // Il raggruppamento avviene sulla pagina appena letta: un gruppo a cavallo fra due
-            // pagine si vedrebbe spezzato, come si vede spezzato oggi. Non peggiora nulla, e
-            // rileggere la libreria per ricomporlo costerebbe una query per riga.
-            var groups = page.Items
-                .GroupBy(i => IsGroupFolder(library, FolderOf(i.ServerRelativeUrl))
-                              ? $"{FolderOf(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}"
-                              : $"solo:{i.Id}",
-                         StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.ToList())
-                .ToList();
+            // Il raggruppamento e la regola del punteggio vivono nel Punteggiatore: lo stesso numero
+            // serve qui, nella lettura del singolo elemento e nel riempimento che lo deposita in
+            // libreria, e tre definizioni diverse dello stesso numero sono tre occasioni di
+            // divergere in silenzio.
+            var groups = _punteggiatore.Raggruppa(library, page.Items);
 
             var items = groups.Select(group =>
             {
                 // Il portatore e' il raster: e' l'unico che si possa vedere in anteprima e l'unico
                 // che un modello sappia descrivere, quindi e' su di lui che agiscono i pulsanti.
-                var i = group.FirstOrDefault(x => IsRasterImage(x.FileName)) ?? group[0];
-                var kw = SplitTags(i.Tags);
-                var v = _validator.Validate(i.Title, i.Description, kw, "vector");
+                var i = Punteggiatore.PortatoreDi(group);
+                var kw = Punteggiatore.KeywordDi(i.Tags);
+                var v = _validator.Validate(i.Title, i.Description, kw, Punteggiatore.ModoDi(group));
+                AllineaPunteggio(library, i, v.Score);
                 return new
                 {
                     i.Id,
@@ -155,7 +346,8 @@ public class BackofficeController : ControllerBase
                     i.Inviato,
                     checkedOutBy = i.CheckedOutBy,
                     modified = i.Modified,
-                    previewUrl = $"/api/backoffice/file?w=480&url={Uri.EscapeDataString(i.ServerRelativeUrl)}",
+                    previewUrl = Miniatura(i.ServerRelativeUrl),
+                    fileUrl = Diretto(i.ServerRelativeUrl),
                     deliverables = group.Count > 1
                         ? group.OrderBy(d => d.FileName).Select(d => new
                         {
@@ -163,6 +355,10 @@ public class BackofficeController : ControllerBase
                             fileName = d.FileName,
                             kind = Path.GetExtension(d.FileName).TrimStart('.').ToUpperInvariant(),
                             carrier = d.Id == i.Id,
+                            // Senza indirizzo la consegna e' solo un'etichetta: il vettoriale che
+                            // si sta per vendere non si puo' ne' guardare ne' scaricare, e l'unica
+                            // verifica possibile resta aprire SharePoint a mano.
+                            url = Diretto(d.ServerRelativeUrl),
                         }).ToArray()
                         : null,
                     validation = new
@@ -187,6 +383,20 @@ public class BackofficeController : ControllerBase
                 lettura = new { lette = page.Scanned, scartate = page.Skipped, strategia = page.Strategy },
             });
         }
+        catch (Exception ex) when (IsThresholdError(ex) && (punteggioMin is not null || punteggioMax is not null))
+        {
+            // Un filtro per punteggio che seleziona più di 5.000 immagini non è realizzabile su
+            // SharePoint, né dalla lista né dall'indice. Dirlo è l'unica risposta onesta: una
+            // griglia vuota qui significherebbe "non ce ne sono", che è falso.
+            _log.LogWarning(ex, "Soglia superata su {Library} con fascia {Min}-{Max}", library, punteggioMin, punteggioMax);
+            return Ok(new
+            {
+                ok = false,
+                error = "Questa fascia di punteggio contiene più di 5.000 immagini e SharePoint " +
+                        "rifiuta di filtrarle. Scegli una fascia più stretta: le più utili sono gli " +
+                        "estremi -- le peggiori, da rilavorare, e le migliori.",
+            });
+        }
         catch (Exception ex) when (IsThresholdError(ex))
         {
             // SharePoint refuses to filter a library past 5000 items on a column without an index.
@@ -209,24 +419,8 @@ public class BackofficeController : ControllerBase
 
     private static bool IsThresholdError(Exception ex) =>
         ex.Message.Contains("soglia", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("threshold", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Cartella che contiene il file, come percorso server-relative.</summary>
-    private static string FolderOf(string serverRelativeUrl)
-    {
-        var slash = serverRelativeUrl.LastIndexOf('/');
-        return slash <= 0 ? "" : serverRelativeUrl[..slash];
-    }
-
-    /// <summary>
-    /// True quando la cartella e' una sottocartella della libreria, cioe' un gruppo di consegna.
-    ///
-    /// La radice non e' un gruppo: e' dove arrivano le immagini singole del percorso precedente, e
-    /// trattarla come tale unirebbe l'intera libreria in una riga sola.
-    /// </summary>
-    private bool IsGroupFolder(string library, string folder) =>
-        folder.Length > 0
-        && !string.Equals(folder.TrimEnd('/'), $"{SiteRoot}/{library}", StringComparison.OrdinalIgnoreCase);
+        || ex.Message.Contains("threshold", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("5.000", StringComparison.Ordinal);
 
     [HttpGet("items/{id:int}")]
     public IActionResult Item(int id, [FromQuery] string library)
@@ -234,7 +428,7 @@ public class BackofficeController : ControllerBase
         var bad = Guard(library);
         if (bad != null) return bad;
 
-        try { return Ok(new { ok = true, item = Shape(_sp.GetItem(library, id)) }); }
+        try { return Ok(new { ok = true, item = Shape(library, _sp.GetItem(library, id)) }); }
         catch (Exception ex) { return Ok(new { ok = false, error = ex.Message }); }
     }
 
@@ -247,7 +441,64 @@ public class BackofficeController : ControllerBase
         try
         {
             var updated = _sp.UpdateItem(library, id, req.title, req.description, req.tags);
-            return Ok(new { ok = true, item = Shape(updated) });
+            return Ok(new { ok = true, item = Shape(library, updated) });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { ok = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Registra nel journal la correzione appena salvata, con la nota che la spiega.
+    ///
+    /// Finora il ciclo di apprendimento partiva solo dai job caricati dall'app: le correzioni fatte
+    /// in revisione sulle immagini gia' passate dalla pipeline si perdevano, ed erano proprio quelle
+    /// che si ripetevano di piu'. Qui il confronto e' fra i metadati che l'autore ha trovato scritti
+    /// (opera dell'AI, a monte) e quelli con cui li ha sostituiti.
+    /// </summary>
+    [HttpPost("items/{id:int}/feedback")]
+    public IActionResult Feedback(int id, [FromQuery] string library, [FromBody] BackofficeFeedbackRequest req)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        try
+        {
+            var item = _sp.GetItem(library, id);
+            var baseName = Path.GetFileNameWithoutExtension(item.FileName);
+
+            var generated = new MetadataSnapshot
+            {
+                Title = req.generatedTitle ?? "",
+                Description = req.generatedDescription ?? "",
+                Keywords = Punteggiatore.KeywordDi(req.generatedKeywords ?? ""),
+                Category = "",
+            };
+            var corrected = new MetadataSnapshot
+            {
+                Title = req.title ?? "",
+                Description = req.description ?? "",
+                Keywords = Punteggiatore.KeywordDi(req.keywords ?? ""),
+                Category = "",
+            };
+
+            var entry = _feedback.RecordCorrection(baseName, "vector", generated, corrected, req.note);
+            if (entry is null)
+                return Ok(new { ok = true, recorded = false, message = "Nessuna differenza e nessuna nota: niente da imparare." });
+
+            _log.LogInformation("Feedback registrato per {File}: +{Added} -{Removed}",
+                                item.FileName, entry.KeywordsAdded.Count, entry.KeywordsRemoved.Count);
+
+            return Ok(new
+            {
+                ok = true,
+                recorded = true,
+                keywordsAdded = entry.KeywordsAdded,
+                keywordsRemoved = entry.KeywordsRemoved,
+                titleChanged = entry.TitleChanged,
+                pending = _feedback.Count,
+            });
         }
         catch (Exception ex)
         {
@@ -269,7 +520,7 @@ public class BackofficeController : ControllerBase
         {
             var r = _sp.ReleaseCheckOut(library, id, discard);
             _log.LogInformation("Check-in {Library}/{Id}: {Message}", library, id, r.Message);
-            return Ok(new { ok = true, changed = r.Changed, message = r.Message, item = Shape(r.Item) });
+            return Ok(new { ok = true, changed = r.Changed, message = r.Message, item = Shape(library, r.Item) });
         }
         catch (Exception ex)
         {
@@ -298,7 +549,7 @@ public class BackofficeController : ControllerBase
             if (value && !force)
             {
                 var target = _sp.GetItem(library, id);
-                var v = _validator.Validate(target.Title, target.Description, SplitTags(target.Tags), "vector");
+                var v = _validator.Validate(target.Title, target.Description, Punteggiatore.KeywordDi(target.Tags), "vector");
                 if (v.BlocksDispatch)
                     return Ok(new
                     {
@@ -322,7 +573,7 @@ public class BackofficeController : ControllerBase
             // l'autore stava per correggere.
             var group = PropagateToGroup(library, updated, value);
 
-            return Ok(new { ok = true, item = Shape(updated), gruppo = group });
+            return Ok(new { ok = true, item = Shape(library, updated), gruppo = group });
         }
         catch (Exception ex)
         {
@@ -472,7 +723,7 @@ public class BackofficeController : ControllerBase
         {
             var carrier = _sp.GetItem(library, id);
             var siblings = _sp.GetDeliverableSiblings(library, carrier);
-            var folder = FolderOf(carrier.ServerRelativeUrl);
+            var folder = Punteggiatore.CartellaDi(carrier.ServerRelativeUrl);
 
             _sp.DeleteItem(library, id);
             var removed = 1;
@@ -486,7 +737,7 @@ public class BackofficeController : ControllerBase
 
             // Svuotato il gruppo, resta il contenitore: invisibile nel Backoffice ma capace di
             // consumare un posto per pagina a ogni sfogliata, per sempre.
-            if (IsGroupFolder(library, folder)) _sp.DeleteFolderIfEmpty(folder);
+            if (_punteggiatore.CartellaDiGruppo(library, folder)) _sp.DeleteFolderIfEmpty(folder);
 
             return Ok(new { ok = true, eliminate = removed, nonEliminate = siblings.Count + 1 - removed });
         }
@@ -570,15 +821,157 @@ public class BackofficeController : ControllerBase
     }
 
     /// <summary>
-    /// True when the file carries pixels a vision model can actually read.
+    /// Ritraccia SVG ed EPS di un'immagine già in libreria, riscrivendoli al loro posto.
     ///
-    /// Deliberately a whitelist rather than a list of things to exclude: an unknown extension is
-    /// far more likely to be another format nobody can decode than a raster one, and guessing wrong
-    /// costs a paid call that fails.
+    /// ## Perché serve un'azione apposta
+    /// Il tracciato migliora nel tempo, ma le immagini già consegnate restano com'erano: chi le
+    /// guarda nel Backoffice vede il risultato del codice del giorno in cui sono state lavorate.
+    /// Senza questo comando l'unico modo di aggiornarle sarebbe ricaricarle da capo, perdendo
+    /// metadati, punteggio, data di ingresso e la posizione nel flusso. La rigenerazione dei
+    /// metadati (l'altro pulsante) non c'entra: quella riscrive titolo e keyword chiamando il
+    /// modello di visione, questa riscrive il disegno e non tocca una parola.
+    ///
+    /// ## Il JPEG non si riscrive, ed è deliberato
+    /// Il JPEG del gruppo è la **sorgente** da cui si traccia. Rigenerarlo significherebbe
+    /// ricomprimere una compressione -- perdita di generazione su un file che il cliente vede nei
+    /// risultati di ricerca -- in cambio di niente, perché il vettorizzatore lo ricava dallo stesso
+    /// originale che ha appena letto. Si riscrivono solo i vettoriali, che sono ciò che cambia.
     /// </summary>
-    private static bool IsRasterImage(string fileName) =>
-        Path.GetExtension(fileName).ToLowerInvariant()
-            is ".jpg" or ".jpeg" or ".png" or ".webp" or ".tif" or ".tiff" or ".bmp" or ".gif";
+    [HttpPost("items/{id:int}/rivettorializza")]
+    public async Task<IActionResult> Rivettorializza(int id, [FromQuery] string library, CancellationToken ct)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        try
+        {
+            return Ok(await RivettorializzaOneAsync(library, id, ct));
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Rivettorializzazione non riuscita per {Library}/{Id}", library, id);
+            return Ok(new RivettorializzaResult(false, id, SafeFileName(library, id), ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Non esiste un equivalente "per tutta la pagina" di questa azione, ed è deliberato.
+    ///
+    /// Un tracciato a colori è una ventina di passate di potrace: sull'immagine di prova sono
+    /// quattro secondi di CPU, ai quali si aggiungono lo scaricamento e due caricamenti su
+    /// SharePoint. Ventiquattro immagini in una sola richiesta supererebbero i 230 secondi oltre i
+    /// quali Azure chiude la connessione, e il lavoro andrebbe perso a metà senza che nessuno sappia
+    /// dove si era arrivati.
+    ///
+    /// Il Backoffice chiama quindi questo endpoint una immagine alla volta. Costa qualche
+    /// round-trip in più e in cambio non può scadere, mostra a che punto è e, se una immagine
+    /// fallisce, le altre proseguono.
+    /// </summary>
+    private async Task<RivettorializzaResult> RivettorializzaOneAsync(string library, int id, CancellationToken ct)
+    {
+        var carrier = _sp.GetItem(library, id);
+
+        // Si traccia **dai pixel**: chiedere di ritracciare un SVG non ha senso, e l'errore va detto
+        // indicando cosa fare invece, perché nel Backoffice il gruppo si presenta come una riga sola
+        // e non è ovvio quale dei tre file sia quello su cui agire.
+        if (!Punteggiatore.EImmagineRaster(carrier.FileName))
+            return new RivettorializzaResult(false, id, carrier.FileName,
+                $"{Path.GetExtension(carrier.FileName).TrimStart('.').ToUpperInvariant()} è già un vettoriale: " +
+                "il tracciato si rifà dal JPG dello stesso gruppo.");
+
+        var fratelli = _sp.GetDeliverableSiblings(library, carrier);
+        var vettoriali = fratelli
+            .Where(f => Path.GetExtension(f.FileName).ToLowerInvariant() is ".svg" or ".eps")
+            .ToList();
+
+        if (vettoriali.Count == 0)
+            return new RivettorializzaResult(false, id, carrier.FileName,
+                "Nessun vettoriale accanto a questa immagine: non c'è niente da riscrivere. " +
+                "Un'immagine senza SVG ed EPS va ricaricata dalla pagina di caricamento.");
+
+        // Un file estratto rifiuterebbe la scrittura *dopo* il tracciato, buttando via il lavoro.
+        // Meglio accorgersene prima, e dire chi lo tiene.
+        var bloccato = vettoriali.FirstOrDefault(v => v.CheckedOutBy.Length > 0);
+        if (bloccato != null)
+            return new RivettorializzaResult(false, id, carrier.FileName,
+                $"{bloccato.FileName} è estratto da {bloccato.CheckedOutBy}: SharePoint rifiuterebbe " +
+                "la riscrittura. Archivialo e riprova.");
+
+        var lavoro = Path.Combine(Path.GetTempPath(), "rivettorializza-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(lavoro);
+        try
+        {
+            // Nome di lavoro neutro: i nomi veri arrivano da SharePoint e contengono puntini di
+            // sospensione e altri caratteri che su disco è inutile far viaggiare. I file si
+            // ricaricano poi con il nome del fratello che sostituiscono, non con questo.
+            var sorgente = Path.Combine(lavoro, "sorgente" + Path.GetExtension(carrier.FileName));
+            await System.IO.File.WriteAllBytesAsync(sorgente, _sp.DownloadFile(carrier.ServerRelativeUrl), ct);
+
+            var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct);
+
+            var riscritte = new List<ConsegnaRiscritta>();
+            foreach (var v in vettoriali)
+            {
+                var estensione = Path.GetExtension(v.FileName).ToLowerInvariant();
+                var prodotto = estensione == ".svg" ? vr.SvgFile : vr.EpsFile;
+                if (prodotto == null) continue;
+
+                var percorso = Path.Combine(lavoro, prodotto);
+                if (!System.IO.File.Exists(percorso)) continue;
+
+                var kbPrima = PesoInKb(v.ServerRelativeUrl);
+
+                // Si riscrive il file al suo posto invece di ricaricarlo come nuovo: così la riga di
+                // libreria non si muove e titolo, keyword, punteggio e data di ingresso restano
+                // quelli di prima, senza doverli salvare e rimettere a mano.
+                try
+                {
+                    using var contenuto = System.IO.File.OpenRead(percorso);
+                    _sp.ReplaceFile(contenuto, v.ServerRelativeUrl);
+                }
+                catch (Exception ex)
+                {
+                    // SharePoint risponde con frasi brevissime -- "Accesso negato." -- che da sole
+                    // non dicono su quale dei tre file si sia fermato né cosa stesse facendo. Senza
+                    // questo contorno il messaggio manda a cercare un problema di permessi che di
+                    // solito non c'entra: è già successo durante lo sviluppo di questa azione.
+                    throw new InvalidOperationException(
+                        $"Riscrittura di {v.FileName} non riuscita: {ex.Message}", ex);
+                }
+
+                riscritte.Add(new ConsegnaRiscritta(
+                    estensione.TrimStart('.').ToUpperInvariant(), v.FileName,
+                    kbPrima, (int)Math.Round(new FileInfo(percorso).Length / 1024.0)));
+            }
+
+            if (riscritte.Count == 0)
+                return new RivettorializzaResult(false, id, carrier.FileName,
+                    "Il tracciato non ha prodotto file: controlla i log del vettorizzatore.");
+
+            _log.LogInformation("Rivettorializzate {Quante} consegne di {File}", riscritte.Count, carrier.FileName);
+
+            return new RivettorializzaResult(
+                true, id, carrier.FileName,
+                consegne: riscritte,
+                aColori: vr.AColori ?? false,
+                daRiportare: carrier.Inviato);
+        }
+        finally
+        {
+            try { Directory.Delete(lavoro, true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// Quanto pesa oggi un file in libreria, in KB. Serve solo a mostrare il prima e il dopo: se
+    /// non si riesce a leggerlo si risponde zero, perché una misura mancante non deve far fallire
+    /// un'operazione che invece è riuscita.
+    /// </summary>
+    private int PesoInKb(string serverRelativeUrl)
+    {
+        try { return (int)Math.Round(_sp.FileSize(serverRelativeUrl) / 1024.0); }
+        catch { return 0; }
+    }
 
     private async Task<RegenerateResult> RegenerateOneAsync(string library, int id, CancellationToken ct)
     {
@@ -589,15 +982,24 @@ public class BackofficeController : ControllerBase
         // ("Image cannot be loaded. Available decoders: ...") which tells the author nothing about
         // what to do. The metadata for the set belongs to its JPEG, and the pipeline writes it
         // there; this file inherits it when the deliverables are sent.
-        if (!IsRasterImage(item.FileName))
+        if (!Punteggiatore.EImmagineRaster(item.FileName))
             return new RegenerateResult(false, id, item.FileName,
                 $"{Path.GetExtension(item.FileName).TrimStart('.').ToUpperInvariant()} è un file vettoriale: " +
                 "non contiene pixel da descrivere. Rigenera i metadati dal JPG dello stesso gruppo.");
 
-        // Once the pipeline has taken the file, rewriting SharePoint metadata would not reach the
-        // marketplaces: the EXIF was already written from the values in force at that moment.
-        if (item.Inviato)
-            return new RegenerateResult(false, id, item.FileName, "Già inviato: i metadati non verrebbero più usati.");
+        // Un file già consegnato si può rigenerare, ma i metadati nuovi restano qui.
+        //
+        // Prima era vietato, con la motivazione che "i metadati non verrebbero più usati": vero
+        // per la pipeline -- l'EXIF è stato scritto all'invio e quel treno è passato -- ma falso
+        // per il mercato. Adobe consente di modificare titolo e keyword di un'immagine già
+        // pubblicata e in vendita ("Content can be edited before submission or after approval and
+        // publication"), e dichiara che rifinire i metadati migliora la visibilità in ricerca.
+        //
+        // Vietarlo significava impedire l'unico intervento possibile su diecimila immagini già
+        // online. Ora si può, ma chi lo fa deve sapere che il lavoro non è finito: i metadati vanno
+        // riportati sul portale Adobe a mano, perché per i contributor non esiste un'API -- lo
+        // dichiara Adobe stessa. Il messaggio lo dice, invece di lasciarlo scoprire dopo.
+        var giaPubblicato = item.Inviato;
 
         // Checked out means the write at the end would be refused. Stopping here also saves the
         // paid vision call that would otherwise be thrown away.
@@ -617,85 +1019,62 @@ public class BackofficeController : ControllerBase
             provider: _metadata.Name,
             previousTitle: item.Title,
             previousTitleLength: item.Title.Length,
-            previousKeywords: SplitTags(item.Tags).Count,
-            item: Shape(updated));
+            previousKeywords: Punteggiatore.KeywordDi(item.Tags).Count,
+            item: Shape(library, updated),
+            daRiportare: giaPubblicato);
     }
 
-    /// <summary>Streams a library file so previews render inside the app.</summary>
-    [HttpGet("file")]
-    public IActionResult File([FromQuery] string url, [FromQuery] int? w = null)
+    /// <summary>Dice se il motore di ricerca risponde a questa identità. Diagnostica, non di flusso.</summary>
+    [HttpGet("search-check")]
+    public IActionResult SearchCheck([FromQuery] string library = "ImagesToClassify",
+                                     [FromQuery] string q = "",
+                                     [FromQuery] string? select = null)
     {
-        if (!_s.Enabled) return BadRequest("Pipeline disabilitata.");
+        var bad = Guard(library);
+        if (bad != null) return bad;
 
-        // The path must stay inside this site: the parameter reaches CSOM directly.
-        var root = SiteRoot;
-        if (string.IsNullOrWhiteSpace(url) || !url.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("..", StringComparison.Ordinal))
-            return BadRequest("Percorso non ammesso.");
-
-        try
-        {
-            var bytes = _sp.DownloadFile(url);
-            var ext = Path.GetExtension(url).ToLowerInvariant();
-            var mime = ext switch
-            {
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".png" => "image/png",
-                ".svg" => "image/svg+xml",
-                ".webp" => "image/webp",
-                _ => "application/octet-stream",
-            };
-
-            // Every preview costs a full download from SharePoint plus a resize here, and paging
-            // back and forth would pay it again for images already on screen. The pixels of a file
-            // under review do not change — only its metadata does — so letting the browser keep
-            // the thumbnail for an hour removes most of that load outright.
-            Response.Headers.CacheControl = "private, max-age=3600";
-
-            // Originals are multi-megabyte. A grid of them would move ~100 MB per page, so the
-            // thumbnail is produced here rather than shipping the full file to the browser.
-            if (w is > 0 && mime.StartsWith("image/") && mime != "image/svg+xml")
-            {
-                try
-                {
-                    using var img = Image.Load(bytes);
-                    int edge = Math.Clamp(w.Value, 64, 2000);
-                    if (Math.Max(img.Width, img.Height) > edge)
-                    {
-                        double scale = (double)edge / Math.Max(img.Width, img.Height);
-                        img.Mutate(x => x.Resize(Math.Max(1, (int)(img.Width * scale)),
-                                                 Math.Max(1, (int)(img.Height * scale))));
-                    }
-                    using var ms = new MemoryStream();
-                    img.SaveAsJpeg(ms, new JpegEncoder { Quality = 80 });
-                    return File(ms.ToArray(), "image/jpeg");
-                }
-                catch (Exception ex)
-                {
-                    // Not a decodable image (EPS/AI live in these libraries too): serve it untouched.
-                    _log.LogDebug(ex, "Ridimensionamento non applicabile a {Url}", url);
-                }
-            }
-
-            return File(bytes, mime);
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Anteprima non disponibile per {Url}", url);
-            return NotFound();
-        }
+        var d = _sp.DiagnosticaRicerca(library, q, select);
+        return Ok(new { ok = d.Ok, totalRows = d.TotalRows, righe = d.Righe, kql = d.Kql, errore = d.Errore, campioni = d.Campioni });
     }
 
-    private static List<string> SplitTags(string tags) =>
-        (tags ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(t => t.Trim())
-            .Where(t => t.Length > 0)
-            .ToList();
+    /// <summary>
+    /// L'indirizzo del file su SharePoint, per il browser.
+    ///
+    /// Fino a ieri ogni anteprima passava dall'API: scarico del file intero con il certificato
+    /// dell'applicazione, ridimensionamento in memoria, e poi i byte al browser. Funzionava, ma
+    /// pagava due volte -- banda in entrata e CPU -- su un piano con sessanta minuti di CPU al
+    /// giorno, tanto che il frontend aveva dovuto mettere una coda a quattro anteprime per volta
+    /// per non far cadere il server.
+    ///
+    /// Chi guarda ha accesso alla libreria, quindi il browser può chiedere il file a SharePoint per
+    /// conto suo: l'API esce dal percorso delle immagini e resta solo su dati e comandi. Il vecchio
+    /// indirizzo continua a essere emesso come ripiego, per il caso in cui la sessione SharePoint
+    /// non ci sia: meglio un'anteprima lenta che un riquadro rotto.
+    /// </summary>
+    private string Diretto(string serverRelativeUrl) =>
+        UrlSharePoint.Diretto(_s.SiteUrl!, serverRelativeUrl);
 
-    private object Shape(SharePointItem i)
+    /// <summary>
+    /// La miniatura già pronta di SharePoint.
+    ///
+    /// Serve perché la galleria mostra decine di immagini insieme e gli originali pesano megabyte
+    /// l'uno: chiedere i file interi al posto delle miniature sposterebbe il costo dal nostro
+    /// server alla rete di chi guarda, che non è un miglioramento. SharePoint le genera e le tiene
+    /// in cache per conto suo, quindi qui non si ridimensiona più niente.
+    ///
+    /// La risoluzione è una scala, non un numero di pixel: 2 dà il lato lungo intorno agli 800,
+    /// che su una scheda da 168 basta e avanza anche su schermi a densità doppia. Il valore 4 --
+    /// provato per primo -- restituiva 1600 pixel, cioè quattro volte i dati necessari.
+    /// </summary>
+    private string Miniatura(string serverRelativeUrl, int risoluzione = 2) =>
+        UrlSharePoint.Miniatura(_s.SiteUrl!, serverRelativeUrl, risoluzione);
+
+    private object Shape(string library, SharePointItem i)
     {
-        var kw = SplitTags(i.Tags);
-        var v = _validator.Validate(i.Title, i.Description, kw, "vector");
+        var kw = Punteggiatore.KeywordDi(i.Tags);
+        // Fuori dal raggruppamento si vede un file solo: il suo modo lo dice la sua estensione.
+        var v = _validator.Validate(i.Title, i.Description, kw, Punteggiatore.ModoDi(new[] { i }));
+        AllineaPunteggio(library, i, v.Score);
         return new
         {
             i.Id,
@@ -708,7 +1087,8 @@ public class BackofficeController : ControllerBase
             i.Inviato,
             checkedOutBy = i.CheckedOutBy,
             modified = i.Modified,
-            previewUrl = $"/api/backoffice/file?w=480&url={Uri.EscapeDataString(i.ServerRelativeUrl)}",
+            previewUrl = Miniatura(i.ServerRelativeUrl),
+            fileUrl = Diretto(i.ServerRelativeUrl),
             validation = new
             {
                 score = v.Score,

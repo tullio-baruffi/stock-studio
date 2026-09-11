@@ -18,11 +18,28 @@ const TIMING: Record<string, { label: string; cls: string }> = {
   nodata:    { label: "· Dato assente", cls: "t-nodata" },
 };
 
-const PROMPT_STYLES: Record<string, string> = {
-  silhouette: "Silhouette B/N",
-  flat: "Vettoriale piatto",
-  lineart: "Line art",
-};
+/**
+ * Il supporto non entra più nella ricerca di opportunità.
+ *
+ * Prima c'erano un campo «Stile» e un menu «Prompt» (silhouette, vettoriale piatto, line art), e
+ * ogni analisi usciva legata a un modo di realizzare il tema: la stessa domanda di mercato
+ * risultava diversa a seconda della tecnica scelta, il che non ha senso — il pubblico cerca «cane
+ * con cappellino di compleanno», non «silhouette di cane». Il valore serve solo alle chiamate che
+ * ancora lo richiedono, e non è più esposto a chi guarda.
+ */
+const SUPPORTO_NEUTRO = "any";
+
+/** I quattro report, con la domanda a cui ciascuno risponde. */
+const REPORT = [
+  { id: "themes" as const, icona: "🎯", nome: "Cosa creare",
+    spiega: "Temi con domanda misurata e finestra di pubblicazione ancora aperta: la risposta a «su cosa lavoro adesso»." },
+  { id: "live" as const, icona: "🔥", nome: "Trend attuali",
+    spiega: "Cosa sta salendo in questo momento nelle ricerche. Utile per intercettare, ma molti trend non sono vendibili come stock." },
+  { id: "predicted" as const, icona: "🔮", nome: "Previsti dalle notizie",
+    spiega: "Temi che la stampa segnala in arrivo, con mesi di anticipo: serve a preparare prima che la domanda esista." },
+  { id: "seasonal" as const, icona: "📅", nome: "Stagionali",
+    spiega: "Il calendario ricorrente della domanda. Ricorda che si pubblica fra 90 e 20 giorni prima del picco, non durante." },
+];
 
 /** Tiny inline sparkline for the 15-day trajectory. */
 function Spark({ series }: { series: number[] }) {
@@ -199,13 +216,14 @@ function ThemeCard({ t }: { t: ThemeOpportunity }) {
 
 export default function TrendsView() {
   const [sub, setSub] = useState<Sub>("themes");
-  const [style, setStyle] = useState("silhouette");
+  const ATTIVO = REPORT.find((r) => r.id === sub) ?? REPORT[0];
+  const style = SUPPORTO_NEUTRO;
   const [geo, setGeo] = useState("US");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadSequence = useRef(0);
   const [onlyUsable, setOnlyUsable] = useState(true);
-  const [promptStyle, setPromptStyle] = useState("silhouette");
+  const promptStyle = SUPPORTO_NEUTRO;
 
   const [live, setLive] = useState<LiveTrends | null>(null);
   const [pred, setPred] = useState<Predictions | null>(null);
@@ -293,17 +311,18 @@ export default function TrendsView() {
       <div className="trends-hero">
         <h2>Opportunità di mercato</h2>
         <p>
-          L'analisi parte dai <strong>temi che puoi davvero vendere</strong> — non dai trend del momento,
-          che sono in gran parte persone, marchi e cronaca. Per ognuno misuro la domanda reale, la
-          stagionalità e la traiettoria, così sai <em>cosa</em> creare e <em>quando</em>.
+          L'analisi cerca <strong>temi che puoi davvero vendere</strong> — non i trend del momento,
+          che sono in gran parte persone, marchi e cronaca. Per ognuno misuro domanda reale,
+          stagionalità e traiettoria, così sai <em>cosa</em> produrre e <em>quando</em>.
+        </p>
+        <p className="muted small">
+          I temi sono <strong>indipendenti dal supporto</strong>: lo stesso soggetto può diventare una
+          fotografia, un'illustrazione o un vettoriale, e Adobe tiene tre graduatorie separate per i
+          tre. Scegli prima il tema; il supporto conviene deciderlo dopo, guardando in quale delle tre
+          hai più spazio. E ricorda che quelle graduatorie ordinano per <em>rapporto fra caricamenti e
+          vendite</em>: meglio pochi pezzi su una nicchia precisa che molti su un tema affollato.
         </p>
         <div className="trends-controls">
-          <label>Stile<input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="silhouette" /></label>
-          <label>Prompt
-            <select value={promptStyle} onChange={(e) => setPromptStyle(e.target.value)}>
-              {Object.entries(PROMPT_STYLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </label>
           {sub === "themes" && (
             <label>Categoria
               <select value={cat} onChange={(e) => setCat(e.target.value)}>
@@ -362,11 +381,30 @@ export default function TrendsView() {
         )}
       </div>
 
-      <div className="subtabs">
-        <button className={`subtab ${sub === "themes" ? "on" : ""}`} onClick={() => go("themes")}>🎯 Cosa creare</button>
-        <button className={`subtab ${sub === "live" ? "on" : ""}`} onClick={() => go("live")}>🔥 Trend attuali</button>
-        <button className={`subtab ${sub === "predicted" ? "on" : ""}`} onClick={() => go("predicted")}>🔮 Previsti dalle notizie</button>
-        <button className={`subtab ${sub === "seasonal" ? "on" : ""}`} onClick={() => go("seasonal")}>📅 Stagionali</button>
+      {/*
+        Quattro report che rispondono a domande diverse, e finora si distinguevano solo da quale
+        pillola fosse accesa -- in una veste, per un difetto di cascata, nemmeno quello. Il titolo
+        qui sotto dice a voce alta quale si sta guardando e a cosa serve: senza, guardando una
+        tabella di temi non si capisce se stia dicendo cosa creare o cosa sta accadendo adesso.
+      */}
+      <div className="subtabs" role="tablist" aria-label="Tipo di analisi">
+        {REPORT.map((r) => (
+          <button
+            key={r.id}
+            role="tab"
+            aria-selected={sub === r.id}
+            className={`subtab ${sub === r.id ? "on" : ""}`}
+            onClick={() => go(r.id)}
+            title={r.spiega}
+          >
+            {r.icona} {r.nome}
+          </button>
+        ))}
+      </div>
+
+      <div className="tr-quale" role="status">
+        <span className="tr-quale-n">{ATTIVO.icona} {ATTIVO.nome}</span>
+        <span className="tr-quale-s">{ATTIVO.spiega}</span>
       </div>
       {loadError && <div className="notice err" role="alert">{loadError}</div>}
       {loading && (
@@ -501,9 +539,9 @@ export default function TrendsView() {
                   {p.relevance && <RelevanceBlock r={p.relevance} />}
                   <div className="topic-actions">
                     <a className="btn small" target="_blank" rel="noreferrer"
-                       href={`https://stock.adobe.com/search?k=${encodeURIComponent((p.keywords[0] ?? p.topic) + " " + style)}`}>Adobe ↗</a>
+                       href={`https://stock.adobe.com/search?k=${encodeURIComponent((p.keywords[0] ?? p.topic))}`}>Adobe ↗</a>
                     <a className="btn small" target="_blank" rel="noreferrer"
-                       href={`https://www.freepik.com/search?query=${encodeURIComponent((p.keywords[0] ?? p.topic) + " " + style)}&type=vector`}>Freepik ↗</a>
+                       href={`https://www.freepik.com/search?query=${encodeURIComponent((p.keywords[0] ?? p.topic))}`}>Freepik ↗</a>
                   </div>
                 </div>
               </div>

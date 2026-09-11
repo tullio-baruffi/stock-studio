@@ -1,3 +1,5 @@
+using StockStudio.Shared.Vettoriale;
+
 namespace StockStudio.Api.Services;
 
 /// <summary>
@@ -72,14 +74,62 @@ public static class AdobeStockRules
         if (MentionsPeople(list, title))
             list.RemoveAll(k => NoPeopleClaims.Contains(k, StringComparer.OrdinalIgnoreCase));
 
-        if (string.Equals(mode, "vector", StringComparison.OrdinalIgnoreCase))
+        if (Modalita.EVettoriale(mode))
         {
-            // Inserted near the front: the guide weighs the first ten keywords most.
+            // Inserted near the front, but not at the very front: the first positions belong to the
+            // subject, which is what a buyer types. 'vector' is a filter people tick, not a search.
             foreach (var required in new[] { "graphic", "vector" })
                 if (!list.Contains(required, StringComparer.OrdinalIgnoreCase))
-                    list.Insert(Math.Min(list.Count, 3), required);
+                    list.Insert(Math.Min(list.Count, 7), required);
         }
 
+        list = DiversificaTesta(list);
+
         return list.Take(Math.Clamp(maxKeywords, 10, 49)).ToList();
+    }
+
+    /// <summary>
+    /// Le prime dieci posizioni devono coprire dieci idee diverse.
+    ///
+    /// Chiedendo al modello frasi commercialmente mirate, la risposta arriva spesso declinando lo
+    /// stesso sostantivo: "polo match, polo player, polo horse, horseback polo, ..., polo field".
+    /// Sono dieci caselle, ma un concetto solo scritto in cinque modi. Non risulta che Adobe
+    /// penalizzi la ripetizione, e con ogni probabilità il motore spezza comunque le frasi nelle
+    /// loro parole; il danno non è una penalità ma un costo di occasione, ed è pesante proprio
+    /// perché cade sulle uniche posizioni che contano.
+    ///
+    /// Il contributor di riferimento su questo tema, quando racconta la testa di una lista che
+    /// funziona, elenca "waterfall, autumn, falls, fall, river, swimming hole": concetti distinti,
+    /// non varianti dello stesso. Qui una keyword entra fra le prime dieci solo se porta almeno una
+    /// parola che non c'è ancora; le altre scalano dopo, senza essere perse.
+    /// </summary>
+    private static List<string> DiversificaTesta(List<string> list, int testa = 10)
+    {
+        if (list.Count <= 2) return list;
+
+        var scelte = new List<string>();
+        var rimandate = new List<string>();
+        var viste = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var k in list)
+        {
+            if (scelte.Count >= testa) { rimandate.Add(k); continue; }
+
+            var parole = k.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            // Una parola già vista in testa non aggiunge una ricerca nuova: la keyword aspetta.
+            if (parole.Length > 0 && parole.All(p => viste.Contains(p)) && scelte.Count > 0)
+            {
+                rimandate.Add(k);
+                continue;
+            }
+
+            scelte.Add(k);
+            foreach (var p in parole) viste.Add(p);
+        }
+
+        // Se il soggetto è così monotematico da non offrire dieci idee, le rimandate risalgono
+        // nell'ordine d'origine: meglio una testa ripetitiva che una testa corta.
+        scelte.AddRange(rimandate);
+        return scelte;
     }
 }

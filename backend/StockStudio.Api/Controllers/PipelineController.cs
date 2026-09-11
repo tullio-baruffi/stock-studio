@@ -150,6 +150,74 @@ public class PipelineController : ControllerBase
         trigger = _queue.CanEnqueue ? "queue" : "sharepoint-logicapp",
     });
 
+    /// <summary>
+    /// Quel che serve al browser per accedere a SharePoint e per accorgersi se non lo è.
+    ///
+    /// Le anteprime non passano più dall'API: il tag &lt;img&gt; le chiede a SharePoint con la
+    /// sessione di chi guarda. Ottimo per il consumo di CPU, ma introduce un modo di fallire che
+    /// prima non esisteva -- senza sessione ogni miniatura diventa un riquadro vuoto, e nulla nella
+    /// pagina spiega perché. Peggio: sembra un difetto dell'applicazione.
+    ///
+    /// Qui si restituisce l'indirizzo del sito (dove mandare l'utente ad accedere) e l'indirizzo di
+    /// una miniatura vera (con cui provare se la sessione c'è). La prova deve essere un file
+    /// protetto: le risorse statiche di _layouts rispondono anche senza sessione e direbbero di sì
+    /// sempre.
+    /// </summary>
+    [HttpGet("sessione-sharepoint")]
+    public IActionResult SessioneSharePoint()
+    {
+        if (string.IsNullOrWhiteSpace(_s.SiteUrl))
+            return Ok(new { ok = false, error = "SharePoint non configurato." });
+
+        var host = new Uri(_s.SiteUrl).GetLeftPart(UriPartial.Authority);
+
+        string? prova;
+        lock (SerraturaProva)
+        {
+            if (_provaUrl != null && DateTimeOffset.UtcNow - _provaQuando < TimeSpan.FromHours(1))
+                prova = _provaUrl;
+            else
+            {
+                prova = CercaUnaMiniatura();
+                if (prova != null) { _provaUrl = prova; _provaQuando = DateTimeOffset.UtcNow; }
+            }
+        }
+
+        return Ok(new
+        {
+            ok = true,
+            siteUrl = _s.SiteUrl,
+            host,
+            // Il punto di accesso di SharePoint: dopo l'autenticazione rimanda al sito, e i cookie
+            // restano validi per tutto il dominio -- comprese le miniature.
+            loginUrl = $"{_s.SiteUrl.TrimEnd('/')}/_layouts/15/Authenticate.aspx?Source={Uri.EscapeDataString(_s.SiteUrl)}",
+            provaUrl = prova,
+        });
+    }
+
+    private static string? _provaUrl;
+    private static DateTimeOffset _provaQuando;
+    private static readonly object SerraturaProva = new();
+
+    /// <summary>
+    /// Una miniatura qualsiasi che esista davvero. Costa una lettura da una riga, e vale un'ora:
+    /// serve solo come bersaglio della prova, non come dato.
+    /// </summary>
+    private string? CercaUnaMiniatura()
+    {
+        foreach (var libreria in new[] { "ImagesSent", "ImagesToSend", "ImagesToClassify" })
+        {
+            try
+            {
+                var page = _sp.ListItems(libreria, 1, null, null, null);
+                var i = page.Items.FirstOrDefault(x => !string.IsNullOrEmpty(x.ServerRelativeUrl));
+                if (i != null) return UrlSharePoint.Miniatura(_s.SiteUrl!, i.ServerRelativeUrl);
+            }
+            catch { /* si prova la libreria successiva */ }
+        }
+        return null;
+    }
+
     /// <summary>Read-only: pipeline funnel — item counts across the ImagesToClassify → ImagesToSend → ImagesSent stages.</summary>
     [HttpGet("funnel")]
     public IActionResult Funnel()
