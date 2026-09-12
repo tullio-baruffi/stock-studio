@@ -172,7 +172,7 @@ let bersaglioRinnovato = false;
 
 async function chiediBersaglio(nuova: boolean) {
   try {
-    const r = await fetch(`/api/pipeline/sessione-sharepoint${nuova ? "?nuova=1" : ""}`).then((x) => x.json());
+    const r = await fetch(`/api/pipeline/sessione-sharepoint${nuova ? "?nuova=true" : ""}`).then((x) => x.json());
     provaUrl = r?.provaUrl ?? provaUrl;
     loginUrl = r?.loginUrl ?? r?.siteUrl ?? loginUrl;
   } catch { /* senza indirizzo non si può provare */ }

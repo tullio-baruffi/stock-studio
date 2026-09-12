@@ -198,6 +198,7 @@ public class PipelineController : ControllerBase
             // restano validi per tutto il dominio -- comprese le miniature.
             loginUrl = $"{_s.SiteUrl.TrimEnd('/')}/_layouts/15/Authenticate.aspx?Source={Uri.EscapeDataString(_s.SiteUrl)}",
             provaUrl = prova,
+            diagnosi = _diagnosiProva,
         });
     }
 
@@ -227,23 +228,36 @@ public class PipelineController : ControllerBase
         return TrovaMiniatura(true) ?? TrovaMiniatura(false);
     }
 
+    /// <summary>Perche' la ricerca del bersaglio e' andata come e' andata: si legge da fuori.</summary>
+    private static string _diagnosiProva = "";
+
     private string? TrovaMiniatura(bool rispettaScarti)
     {
+        var righe = new List<string>();
         foreach (var libreria in new[] { "ImagesSent", "ImagesToSend", "ImagesToClassify" })
         {
             try
             {
                 var page = _sp.ListItems(libreria, 60, null, null, null);
+                var raster = 0;
                 foreach (var i in page.Items)
                 {
                     if (!DisegnabileDaSharePoint(i.ServerRelativeUrl)) continue;
+                    raster++;
                     var url = UrlSharePoint.Miniatura(_s.SiteUrl!, i.ServerRelativeUrl);
                     if (rispettaScarti && _provaScartate.Contains(url)) continue;
+                    righe.Add($"{libreria}: {page.Items.Count} elementi, {raster} raster, scelto");
+                    _diagnosiProva = string.Join(" | ", righe);
                     return url;
                 }
+                righe.Add($"{libreria}: {page.Items.Count} elementi, {raster} raster, nessuno utile");
             }
-            catch { /* si prova la libreria successiva */ }
+            catch (Exception ex)
+            {
+                righe.Add($"{libreria}: {ex.GetType().Name} {ex.Message}");
+            }
         }
+        _diagnosiProva = string.Join(" | ", righe);
         return null;
     }
 
