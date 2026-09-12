@@ -129,7 +129,7 @@ namespace StockStudio.Shared.Vettoriale
                 var chiuso = punti.Count > 2
                           && Math.Abs(punti[0].X - punti[punti.Count - 1].X) < 1e-9
                           && Math.Abs(punti[0].Y - punti[punti.Count - 1].Y) < 1e-9;
-                var arco = AdattaCubiche(punti, tolleranza);
+                var arco = AdattaCubiche(punti, tolleranza, chiuso, larghezza, altezza);
                 arco.Chiuso = chiuso;
                 archi.Add(arco);
             }
@@ -542,7 +542,7 @@ namespace StockStudio.Shared.Vettoriale
         /// tolleranza si taglia proprio li' e si riprova sulle due meta': dove il confine e' dolce
         /// basta una curva, dove e' mosso ne servono di piu', e non deve deciderlo nessuno prima.
         /// </summary>
-        private static Arco AdattaCubiche(List<Punto> punti, double tolleranza)
+        private static Arco AdattaCubiche(List<Punto> punti, double tolleranza, bool chiuso, double larghezza, double altezza)
         {
             var arco = new Arco { Inizio = punti[0], Fine = punti[punti.Count - 1] };
             if (punti.Count < 2) return arco;
@@ -553,11 +553,62 @@ namespace StockStudio.Shared.Vettoriale
             }
 
             var tagli = TrovaSpigoli(punti);
+
+            // Agli estremi dell'arco la direzione si prende da un lato solo, perche' di la' non c'e'
+            // altro. Ma in un anello chiuso i due estremi sono lo **stesso punto**: prendendo ognuno
+            // la propria, la curva si richiude formando uno spigolo che nel disegno non esiste. Alla
+            // cucitura la direzione si misura quindi a cavallo, come in ogni altro punto interno --
+            // a meno che li' il confine giri davvero, e allora lo spigolo va tenuto.
+            var tInizio = Tangente(punti, 0, +1);
+            var tFine = Tangente(punti, punti.Count - 1, -1);
+            if (chiuso)
+            {
+                var cucitura = TangenteCucitura(punti);
+                if (cucitura.HasValue)
+                {
+                    tInizio = cucitura.Value;
+                    tFine = new Punto(-cucitura.Value.X, -cucitura.Value.Y);
+                }
+            }
+
             for (var t = 0; t + 1 < tagli.Count; t++)
-                Adatta(punti, tagli[t], tagli[t + 1], tolleranza, arco.Cubiche);
+                Adatta(punti, tagli[t], tagli[t + 1],
+                       t == 0 ? tInizio : Tangente(punti, tagli[t], +1),
+                       t + 2 == tagli.Count ? tFine : Tangente(punti, tagli[t + 1], -1),
+                       tolleranza, arco.Cubiche, larghezza, altezza);
 
             if (arco.Cubiche.Count == 0) arco.Cubiche.Add(Retta(punti[0], punti[punti.Count - 1]));
             return arco;
+        }
+
+        /// <summary>
+        /// La direzione del confine attraverso la cucitura di un anello, guardando indietro dalla
+        /// fine e avanti dall'inizio. Restituisce null quando li' c'e' uno spigolo vero, che va
+        /// lasciato tale.
+        /// </summary>
+        private static Punto? TangenteCucitura(List<Punto> punti)
+        {
+            var n = punti.Count;
+            if (n < 2 * Finestra + 2) return null;
+
+            // L'ultimo punto ripete il primo: il passo indietro parte da quello prima.
+            var prima = punti[n - 1 - Finestra];
+            var dopo = punti[Finestra];
+
+            var ax = punti[0].X - prima.X;
+            var ay = punti[0].Y - prima.Y;
+            var bx = dopo.X - punti[0].X;
+            var by = dopo.Y - punti[0].Y;
+            var la = Math.Sqrt(ax * ax + ay * ay);
+            var lb = Math.Sqrt(bx * bx + by * by);
+            if (la < 1e-9 || lb < 1e-9) return null;
+            if ((ax * bx + ay * by) / (la * lb) <= CosenoSpigolo) return null;   // spigolo vero
+
+            var dx = dopo.X - prima.X;
+            var dy = dopo.Y - prima.Y;
+            var l = Math.Sqrt(dx * dx + dy * dy);
+            if (l < 1e-9) return null;
+            return new Punto(dx / l, dy / l);
         }
 
         private static Punto[] Retta(Punto a, Punto b)
@@ -610,17 +661,21 @@ namespace StockStudio.Shared.Vettoriale
         /// <summary>
         /// Adatta una cubica al tratto indicato; se non basta, taglia nel punto peggiore e riprova.
         /// </summary>
-        private static void Adatta(List<Punto> p, int da, int a, double tolleranza, List<Punto[]> fuori)
+        /// <param name="tDa">Direzione con cui la curva deve partire, in avanti.</param>
+        /// <param name="tA">Direzione con cui deve arrivare, presa all'indietro dal punto finale.</param>
+        private static void Adatta(List<Punto> p, int da, int a, Punto tDa, Punto tA,
+                                   double tolleranza, List<Punto[]> fuori,
+                                   double larghezza, double altezza)
         {
             if (a - da < 1) return;
             if (a - da == 1) { fuori.Add(Retta(p[da], p[a])); return; }
 
-            var t1 = Tangente(p, da, +1);
-            var t2 = Tangente(p, a, -1);
+            var t1 = tDa;
+            var t2 = tA;
             var u = Parametri(p, da, a);
 
             Punto c1, c2;
-            if (!Controlli(p, da, a, u, t1, t2, out c1, out c2))
+            if (!Controlli(p, da, a, u, t1, t2, larghezza, altezza, out c1, out c2))
             {
                 fuori.Add(Retta(p[da], p[a]));
                 return;
@@ -637,8 +692,31 @@ namespace StockStudio.Shared.Vettoriale
             // Il taglio non puo' cadere su un estremo, o la ricorsione non scenderebbe mai.
             if (peggiore <= da) peggiore = da + 1;
             if (peggiore >= a) peggiore = a - 1;
-            Adatta(p, da, peggiore, tolleranza, fuori);
-            Adatta(p, peggiore, a, tolleranza, fuori);
+
+            // Le due meta' devono incontrarsi lungo la **stessa** direzione, altrimenti nel punto di
+            // taglio si forma un angolo. Prendendo ciascuna la propria corda -- quella all'indietro
+            // per chi arriva, quella in avanti per chi riparte -- le due direzioni differiscono di
+            // quanto il confine gira in quel tratto, e ogni taglio lasciava uno spigolo su una linea
+            // che spigoli non ne ha. Qui la direzione si misura una volta sola, a cavallo del punto,
+            // e la si impone a entrambe: la curva prosegue senza scalino.
+            var tm = TangenteCentrata(p, peggiore);
+            Adatta(p, da, peggiore, t1, new Punto(-tm.X, -tm.Y), tolleranza, fuori, larghezza, altezza);
+            Adatta(p, peggiore, a, tm, t2, tolleranza, fuori, larghezza, altezza);
+        }
+
+        /// <summary>
+        /// La direzione del confine **attraverso** un punto, non da un lato solo: e' quella che le
+        /// due curve che vi si incontrano devono condividere perche' il giunto non si veda.
+        /// </summary>
+        private static Punto TangenteCentrata(List<Punto> p, int i)
+        {
+            var prima = i - Finestra; if (prima < 0) prima = 0;
+            var dopo = i + Finestra; if (dopo > p.Count - 1) dopo = p.Count - 1;
+            var dx = p[dopo].X - p[prima].X;
+            var dy = p[dopo].Y - p[prima].Y;
+            var l = Math.Sqrt(dx * dx + dy * dy);
+            if (l < 1e-9) return Tangente(p, i, +1);
+            return new Punto(dx / l, dy / l);
         }
 
         /// <summary>La direzione con cui la curva deve partire o arrivare, presa su qualche punto.</summary>
@@ -676,7 +754,8 @@ namespace StockStudio.Shared.Vettoriale
         /// misurati: due incognite, e un sistema due per due ai minimi quadrati.
         /// </summary>
         private static bool Controlli(List<Punto> p, int da, int a, double[]? u,
-                                      Punto t1, Punto t2, out Punto c1, out Punto c2)
+                                      Punto t1, Punto t2, double larghezza, double altezza,
+                                      out Punto c1, out Punto c2)
         {
             c1 = p[da]; c2 = p[a];
             if (u == null) return false;
@@ -718,14 +797,42 @@ namespace StockStudio.Shared.Vettoriale
                 alfa1 = (x1 * c22 - x2 * c12) / det;
                 alfa2 = (c11 * x2 - c12 * x1) / det;
                 // Tangenti negative o smisurate piegherebbero la curva all'indietro: meglio la
-                // stima grossolana, un terzo della corda.
-                if (alfa1 < 1e-6 || alfa2 < 1e-6 || alfa1 > corda * 3 || alfa2 > corda * 3)
+                // stima grossolana, un terzo della corda. Il tetto e' la corda stessa: oltre, il
+                // punto di controllo esce dal riquadro del tratto che sta descrivendo -- e sul bordo
+                // della tavola usciva proprio dalla tavola.
+                if (alfa1 < 1e-6 || alfa2 < 1e-6 || alfa1 > corda || alfa2 > corda)
                     alfa1 = alfa2 = corda / 3.0;
+            }
+
+            // Un punto di controllo non deve uscire dalla tavola. Dove il confine corre sul bordo
+            // dell'immagine una tangente presa a cavallo del taglio punta appena in fuori, e il
+            // controllo finisce oltre il margine: il lato, che deve restare dritto, si inarca.
+            //
+            // Si accorcia **lungo la tangente**, non tagliando le coordinate: spostare il controllo
+            // di lato cambierebbe la direzione con cui la curva parte, e rimetterebbe negli attacchi
+            // proprio lo spigolo che si e' tolto. E si vincola alla sola tavola, non al riquadro del
+            // tratto: quello e' piu' stretto della curva che deve descrivere, e la spezzerebbe in
+            // molti piu' pezzi per nulla.
+            if (larghezza > 0 && altezza > 0)
+            {
+                alfa1 = Accorcia(p0, t1, alfa1, larghezza, altezza);
+                alfa2 = Accorcia(p3, t2, alfa2, larghezza, altezza);
             }
 
             c1 = new Punto(p0.X + t1.X * alfa1, p0.Y + t1.Y * alfa1);
             c2 = new Punto(p3.X + t2.X * alfa2, p3.Y + t2.Y * alfa2);
             return true;
+        }
+
+        /// <summary>Quanto si puo' andare lungo la tangente restando dentro la tavola.</summary>
+        private static double Accorcia(Punto da, Punto t, double alfa, double larghezza, double altezza)
+        {
+            var limite = alfa;
+            if (t.X > 1e-9) limite = Math.Min(limite, (larghezza - da.X) / t.X);
+            else if (t.X < -1e-9) limite = Math.Min(limite, (0 - da.X) / t.X);
+            if (t.Y > 1e-9) limite = Math.Min(limite, (altezza - da.Y) / t.Y);
+            else if (t.Y < -1e-9) limite = Math.Min(limite, (0 - da.Y) / t.Y);
+            return limite < 0 ? 0 : limite;
         }
 
         /// <summary>Lo scarto quadratico peggiore fra la curva e i punti misurati.</summary>
