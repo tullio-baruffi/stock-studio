@@ -45,7 +45,13 @@ namespace MJ.Classifier.Helpers
                 File.WriteAllBytes(filePath, fileAsStream.ToArray());
                 log.LogDebug($"{data.ServerRelativeUrl} - File written to disk");
 
-                UpdateMetadataProperties(filePath, data, directoryPath, settings, log);
+                // ExifTool reads SVG but refuses to write it: it used to exit with code 1 and the
+                // vector left without a title and without keywords. SVG carries its own metadata,
+                // so for these the document itself is edited.
+                if (string.Equals(extension, "svg", StringComparison.OrdinalIgnoreCase))
+                    SvgMetadata.Write(filePath, data.Title, data.Description, data.Tags, log);
+                else
+                    UpdateMetadataProperties(filePath, data, directoryPath, settings, log);
                 log.LogDebug($"{data.ServerRelativeUrl} - Metadata properties updated");
 
                 var memoryStream = new MemoryStream(File.ReadAllBytes(filePath));
