@@ -138,23 +138,22 @@ if (typeof document !== "undefined") {
  * sessione e direbbero sempre di sì.
  */
 async function eseguiProva(): Promise<StatoSessione> {
-  if (!provaUrl) {
-    try {
-      const r = await fetch("/api/pipeline/sessione-sharepoint").then((x) => x.json());
-      provaUrl = r?.provaUrl ?? null;
-      loginUrl = r?.loginUrl ?? r?.siteUrl ?? null;
-    } catch { /* senza indirizzo non si può provare */ }
-  }
+  if (!provaUrl) await chiediBersaglio(false);
   if (!provaUrl) return stato;
 
-  const esito = await new Promise<boolean>((risolvi) => {
-    const img = new Image();
-    const scadenza = setTimeout(() => risolvi(false), 8000);
-    img.onload = () => { clearTimeout(scadenza); risolvi(true); };
-    img.onerror = () => { clearTimeout(scadenza); risolvi(false); };
-    // Una miniatura già in cache direbbe di sì anche a sessione scaduta: la prova deve viaggiare.
-    img.src = `${provaUrl}&_p=${Date.now()}`;
-  });
+  let esito = await caricaBersaglio(provaUrl);
+
+  // Un bersaglio che non si disegna -- un EPS, un SVG, una cartella -- fallisce sempre, e la prova
+  // direbbe "sessione assente" per ore con la sessione validissima: l'applicazione chiederebbe un
+  // accesso che non serve e la finestra non si chiuderebbe mai, perché aspetta un esito che non può
+  // arrivare. Prima di credere al fallimento si chiede un altro bersaglio, una volta sola: se
+  // fallisce anche quello, allora è davvero la sessione.
+  if (!esito && !bersaglioRinnovato) {
+    bersaglioRinnovato = true;
+    const vecchio = provaUrl;
+    await chiediBersaglio(true);
+    if (provaUrl && provaUrl !== vecchio) esito = await caricaBersaglio(provaUrl);
+  }
 
   const nuovo: StatoSessione = esito ? "presente" : "assente";
   if (nuovo !== stato) {
@@ -167,4 +166,25 @@ async function eseguiProva(): Promise<StatoSessione> {
     avvisa();
   }
   return nuovo;
+}
+
+let bersaglioRinnovato = false;
+
+async function chiediBersaglio(nuova: boolean) {
+  try {
+    const r = await fetch(`/api/pipeline/sessione-sharepoint${nuova ? "?nuova=1" : ""}`).then((x) => x.json());
+    provaUrl = r?.provaUrl ?? provaUrl;
+    loginUrl = r?.loginUrl ?? r?.siteUrl ?? loginUrl;
+  } catch { /* senza indirizzo non si può provare */ }
+}
+
+function caricaBersaglio(url: string): Promise<boolean> {
+  return new Promise<boolean>((risolvi) => {
+    const img = new Image();
+    const scadenza = setTimeout(() => risolvi(false), 8000);
+    img.onload = () => { clearTimeout(scadenza); risolvi(true); };
+    img.onerror = () => { clearTimeout(scadenza); risolvi(false); };
+    // Una miniatura già in cache direbbe di sì anche a sessione scaduta: la prova deve viaggiare.
+    img.src = `${url}&_p=${Date.now()}`;
+  });
 }

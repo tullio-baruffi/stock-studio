@@ -164,7 +164,7 @@ public class PipelineController : ControllerBase
     /// sempre.
     /// </summary>
     [HttpGet("sessione-sharepoint")]
-    public IActionResult SessioneSharePoint()
+    public IActionResult SessioneSharePoint([FromQuery] bool nuova = false)
     {
         if (string.IsNullOrWhiteSpace(_s.SiteUrl))
             return Ok(new { ok = false, error = "SharePoint non configurato." });
@@ -174,10 +174,16 @@ public class PipelineController : ControllerBase
         string? prova;
         lock (SerraturaProva)
         {
-            if (_provaUrl != null && DateTimeOffset.UtcNow - _provaQuando < TimeSpan.FromHours(1))
+            // `nuova` serve a chi ha appena visto fallire la prova: un bersaglio che non si disegna
+            // resterebbe in cache un'ora, e per un'ora l'applicazione chiederebbe un accesso che
+            // non serve. Chi scopre il guasto puo' chiedere un altro bersaglio invece di subirlo.
+            if (!nuova && _provaUrl != null && DateTimeOffset.UtcNow - _provaQuando < TimeSpan.FromHours(1))
                 prova = _provaUrl;
             else
             {
+                // Chiedere un bersaglio nuovo senza ricordare quello bocciato non servirebbe:
+                // la ricerca e' deterministica e ripescherebbe lo stesso file.
+                if (nuova && _provaUrl != null) _provaScartate.Add(_provaUrl);
                 prova = CercaUnaMiniatura();
                 if (prova != null) { _provaUrl = prova; _provaQuando = DateTimeOffset.UtcNow; }
             }
@@ -197,11 +203,21 @@ public class PipelineController : ControllerBase
 
     private static string? _provaUrl;
     private static DateTimeOffset _provaQuando;
+    /// <summary>I bersagli che si sono gia' rivelati indisegnabili: non si ripropongono.</summary>
+    private static readonly HashSet<string> _provaScartate = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object SerraturaProva = new();
 
     /// <summary>
     /// Una miniatura qualsiasi che esista davvero. Costa una lettura da una riga, e vale un'ora:
     /// serve solo come bersaglio della prova, non come dato.
+    ///
+    /// Dev'essere un **raster**. Le librerie non contengono piu' soltanto JPEG: ci sono gli EPS e
+    /// gli SVG delle consegne, e le cartelle dei gruppi. Di quelli getpreview.ashx non sa disegnare
+    /// niente e risponde errore -- e la prova, che legge proprio quell'errore, concluderebbe
+    /// "sessione assente" con la sessione perfettamente valida. Da li' l'applicazione chiede un
+    /// accesso che non serve, e la finestra non si chiude mai perche' aspetta un esito che non puo'
+    /// arrivare. Pescare il primo elemento qualunque esso sia bastava finche' in cima c'era un
+    /// JPEG: era vero per caso, non per costruzione.
     /// </summary>
     private string? CercaUnaMiniatura()
     {
@@ -209,13 +225,28 @@ public class PipelineController : ControllerBase
         {
             try
             {
-                var page = _sp.ListItems(libreria, 1, null, null, null);
-                var i = page.Items.FirstOrDefault(x => !string.IsNullOrEmpty(x.ServerRelativeUrl));
-                if (i != null) return UrlSharePoint.Miniatura(_s.SiteUrl!, i.ServerRelativeUrl);
+                var page = _sp.ListItems(libreria, 60, null, null, null);
+                foreach (var i in page.Items)
+                {
+                    if (!DisegnabileDaSharePoint(i.ServerRelativeUrl)) continue;
+                    var url = UrlSharePoint.Miniatura(_s.SiteUrl!, i.ServerRelativeUrl);
+                    if (_provaScartate.Contains(url)) continue;
+                    return url;
+                }
             }
             catch { /* si prova la libreria successiva */ }
         }
         return null;
+    }
+
+    /// <summary>I formati di cui SharePoint sa produrre una miniatura.</summary>
+    private static bool DisegnabileDaSharePoint(string? serverRelativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(serverRelativeUrl)) return false;
+        var punto = serverRelativeUrl!.LastIndexOf('.');
+        if (punto < 0 || punto == serverRelativeUrl.Length - 1) return false;
+        var estensione = serverRelativeUrl.Substring(punto + 1).ToLowerInvariant();
+        return estensione is "jpg" or "jpeg" or "png" or "gif" or "bmp" or "webp";
     }
 
     /// <summary>Read-only: pipeline funnel — item counts across the ImagesToClassify → ImagesToSend → ImagesSent stages.</summary>
