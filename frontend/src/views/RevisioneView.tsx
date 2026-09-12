@@ -18,7 +18,9 @@ import { Attesa, Rotella, Segnaposto } from "../components/Attesa";
  * venuto male, non nella miniatura del JPG.
  *
  * ## Sulle azioni distruttive
- * "Approva" sposta allo stadio successivo, ed è reversibile spostando indietro. "Scarta" invece
+ * "Approva" sposta allo stadio successivo, ed è reversibile spostando indietro. Da "Pronti per
+ * l'invio" invece non sposta: alza il flag Invia e la pipeline fa partire il caricamento vero,
+ * spostando il gruppo fra i Pubblicati solo quando l'invio è riuscito. "Scarta" invece
  * cancellerebbe, e una cancellazione legata a un singolo tasto è un incidente che aspetta di
  * accadere. Quindi X **non cancella**: segna, e basta. Le segnate si eliminano tutte insieme, con
  * un passaggio esplicito che dice quante sono. Fino a quel momento ogni X si annulla premendola.
@@ -273,6 +275,17 @@ export default function RevisioneView() {
     return n;
   };
 
+  /**
+   * Da "Pronti per l'invio" approvare significa pubblicare, non promuovere di stadio.
+   *
+   * Qui c'era il guasto che rendeva vana tutta la catena: il pulsante spostava il file in
+   * "Pubblicati" senza mai alzare il flag Invia, cioe' senza accendere niente. Il file spariva
+   * dalla coda e compariva fra i pubblicati, ma nessun marketplace lo aveva ricevuto.
+   *
+   * A spostarlo ci pensa la catena stessa, e solo quando l'invio e' davvero riuscito.
+   */
+  const pubblica = stadio === "ImagesToSend";
+
   const approva = useCallback(async (id?: number) => {
     const bersaglio = id ?? corrente?.id;
     // Dall'ultima libreria non si va avanti: approvare non vorrebbe dire niente.
@@ -284,23 +297,36 @@ export default function RevisioneView() {
                     ?? null;
     setOccupato(true);
     try {
-      const r = await api.backofficeMove(stadio, bersaglio, prossimo);
-      if (r.ok) {
+      const esitoOk = () => {
         setApprovate((n) => n + 1);
-        setEsito({ testo: `${it?.fileName ?? bersaglio} → ${STADI.find((s) => s.id === prossimo)?.label ?? prossimo}`, tipo: "ok" });
+        setEsito({
+          testo: pubblica
+            ? `${it?.fileName ?? bersaglio} → in consegna ai marketplace`
+            : `${it?.fileName ?? bersaglio} → ${STADI.find((s) => s.id === prossimo)?.label ?? prossimo}`,
+          tipo: "ok",
+        });
         setItems((cur) => cur.filter((x) => x.id !== bersaglio));
         setSelezione((s) => { const n = new Set(s); n.delete(bersaglio); return n; });
         // Avanzare da soli è ciò che serve per andare avanti senza toccare altro.
         setApertaId((a) => (a === bersaglio ? successiva : a));
+      };
+
+      if (pubblica) {
+        const r = await api.backofficeSend(stadio, bersaglio, true);
+        if (r.blocked) setEsito({ testo: `${r.error ?? "Metadati non validi."} ${(r.issues ?? []).join(" · ")}`, tipo: "errore" });
+        else if (r.ok) esitoOk();
+        else setEsito({ testo: r.error ?? "Invio non riuscito.", tipo: "errore" });
       } else {
-        setEsito({ testo: r.error ?? "Spostamento non riuscito.", tipo: "errore" });
+        const r = await api.backofficeMove(stadio, bersaglio, prossimo);
+        if (r.ok) esitoOk();
+        else setEsito({ testo: r.error ?? "Spostamento non riuscito.", tipo: "errore" });
       }
     } catch (e) {
       setEsito({ testo: (e as Error).message, tipo: "errore" });
     } finally {
       setOccupato(false);
     }
-  }, [corrente, occupato, items, visibili]);
+  }, [corrente, occupato, items, visibili, pubblica, prossimo, stadio]);
 
   /** Segna e basta: la cancellazione vera avviene solo dal riepilogo, con conferma. */
   const segnaScarto = useCallback((id?: number) => {
@@ -456,7 +482,10 @@ export default function RevisioneView() {
   const approvaSelezionate = async () => {
     const ids = [...selezione];
     if (ids.length === 0 || occupato || !prossimo) return;
-    if (!confirm(`Approvare ${ids.length} ${ids.length === 1 ? "immagine" : "immagini"} e passarle a «${STADI.find((s) => s.id === prossimo)?.label}»?`)) return;
+    const quante = `${ids.length} ${ids.length === 1 ? "immagine" : "immagini"}`;
+    if (!confirm(pubblica
+      ? `Inviare ${quante} ai marketplace? Il caricamento parte davvero.`
+      : `Approvare ${quante} e passarle a «${STADI.find((s) => s.id === prossimo)?.label}»?`)) return;
 
     setOccupato(true);
     setAzione("approva-blocco");
@@ -464,16 +493,26 @@ export default function RevisioneView() {
     for (const id of ids) {
       // Il conteggio avanza a ogni file: su un lotto di cento, un'attesa muta di un minuto
       // sembrerebbe un blocco, e chi guarda ricaricherebbe la pagina a metà del lavoro.
-      setEsito({ testo: `Approvo… ${fatte} di ${ids.length}`, tipo: "ok" });
-      try { if ((await api.backofficeMove(stadio, id, prossimo)).ok) fatte++; }
+      setEsito({ testo: `${pubblica ? "Invio" : "Approvo"}… ${fatte} di ${ids.length}`, tipo: "ok" });
+      try {
+        const r = pubblica
+          ? await api.backofficeSend(stadio, id, true)
+          : await api.backofficeMove(stadio, id, prossimo);
+        if (r.ok) fatte++;
+      }
       catch { /* riferito nel conteggio finale */ }
     }
-    setItems((cur) => cur.filter((x) => !selezione.has(x.id)));
+    // Solo quelle riuscite lasciano l'elenco: togliere anche le altre nasconderebbe i rifiuti
+    // della validazione, che sono proprio quelli da rivedere.
     setApprovate((n) => n + fatte);
     setSelezione(new Set());
     setOccupato(false);
     setAzione(null);
-    setEsito({ testo: `${fatte} approvate su ${ids.length}.`, tipo: fatte === ids.length ? "ok" : "errore" });
+    ricarica();
+    setEsito({
+      testo: `${fatte} ${pubblica ? "inviate" : "approvate"} su ${ids.length}.`,
+      tipo: fatte === ids.length ? "ok" : "errore",
+    });
   };
 
   const eliminaSegnate = async () => {
@@ -742,7 +781,7 @@ export default function RevisioneView() {
                     : "Ritraccia vettoriali"}
                 </button>
               )}
-              {prossimo && <button className="btn small" onClick={approvaSelezionate} disabled={occupato}>{azione === "approva-blocco" ? <><Rotella /> Approvo…</> : "Approva"}</button>}
+              {prossimo && <button className="btn small" onClick={approvaSelezionate} disabled={occupato}>{azione === "approva-blocco" ? <><Rotella /> {pubblica ? "Invio…" : "Approvo…"}</> : (pubblica ? "Invia ai marketplace" : "Approva")}</button>}
               <button
                 className="btn small danger"
                 onClick={() => setDaScartare((s) => new Set([...s, ...selezione]))}
@@ -940,8 +979,10 @@ export default function RevisioneView() {
 
             {prossimo && (
               <button className="btn small primary" onClick={() => approva()} disabled={occupato}
-                      title={`Approva e passa a «${STADI.find((s) => s.id === prossimo)?.label}» (A)`}>
-                ✓ Approva
+                      title={pubblica
+                        ? "Alza il flag Invia: la pipeline carica il gruppo sui marketplace e lo sposta fra i Pubblicati solo se l'invio riesce (A)"
+                        : `Approva e passa a «${STADI.find((s) => s.id === prossimo)?.label}» (A)`}>
+                {pubblica ? "▲ Invia ai marketplace" : "✓ Approva"}
               </button>
             )}
             <button className={`btn small ${daScartare.has(corrente.id) ? "danger" : ""}`}
