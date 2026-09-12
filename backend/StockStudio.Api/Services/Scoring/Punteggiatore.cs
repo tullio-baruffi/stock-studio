@@ -71,9 +71,16 @@ public class Punteggiatore
     /// </summary>
     public List<List<SharePointItem>> Raggruppa(string library, IReadOnlyList<SharePointItem> items) =>
         items
-            .GroupBy(i => CartellaDiGruppo(library, CartellaDi(i.ServerRelativeUrl))
-                          ? $"{CartellaDi(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}"
-                          : $"solo:{i.Id}",
+            // Stessa cartella e stesso nome, estensione a parte: e' un gruppo di consegna, e vale
+            // ovunque i file si trovino.
+            //
+            // Prima il raggruppamento valeva solo dentro una sottocartella, e nella radice della
+            // libreria ogni file faceva gruppo per conto suo. In ImagesSent e' esattamente cosi':
+            // move-sent-files sposta nella radice e appiattisce il gruppo, quindi la galleria dei
+            // Pubblicati mostrava una scheda per file -- e di un EPS o di un SVG l'anteprima non
+            // esiste, da cui due terzi di riquadri "anteprima non disponibile". Il gruppo non e'
+            // fatto dalla cartella: la cartella era solo il modo in cui lo si riconosceva.
+            .GroupBy(i => $"{CartellaDi(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}",
                      StringComparer.OrdinalIgnoreCase)
             .Select(g => g.ToList())
             .ToList();
