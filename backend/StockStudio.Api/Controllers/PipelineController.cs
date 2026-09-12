@@ -221,6 +221,14 @@ public class PipelineController : ControllerBase
     /// </summary>
     private string? CercaUnaMiniatura()
     {
+        // La lista degli scartati e' una preferenza, non un vincolo: se rispettandola non si trova
+        // niente si ripesca comunque. Un bersaglio sospetto e' pur sempre meglio di nessun
+        // bersaglio, perche' senza la prova non puo' nemmeno partire e lo stato resta ignoto.
+        return TrovaMiniatura(true) ?? TrovaMiniatura(false);
+    }
+
+    private string? TrovaMiniatura(bool rispettaScarti)
+    {
         foreach (var libreria in new[] { "ImagesSent", "ImagesToSend", "ImagesToClassify" })
         {
             try
@@ -230,7 +238,7 @@ public class PipelineController : ControllerBase
                 {
                     if (!DisegnabileDaSharePoint(i.ServerRelativeUrl)) continue;
                     var url = UrlSharePoint.Miniatura(_s.SiteUrl!, i.ServerRelativeUrl);
-                    if (_provaScartate.Contains(url)) continue;
+                    if (rispettaScarti && _provaScartate.Contains(url)) continue;
                     return url;
                 }
             }
