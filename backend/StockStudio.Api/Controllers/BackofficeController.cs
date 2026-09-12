@@ -89,6 +89,7 @@ public class BackofficeController : ControllerBase
     private readonly MetadataFeedbackStore _feedback;
     private readonly PunteggioStore _punteggi;
     private readonly Punteggiatore _punteggiatore;
+    private readonly QueueDispatcher _queue;
     private readonly ILogger<BackofficeController> _log;
 
     public BackofficeController(SharePointStore sp, IOptions<PipelineSettings> s,
@@ -96,6 +97,7 @@ public class BackofficeController : ControllerBase
                                 IVectorizer vettorizzatore,
                                 MetadataFeedbackStore feedback, PunteggioStore punteggi,
                                 Punteggiatore punteggiatore,
+                                QueueDispatcher queue,
                                 ILogger<BackofficeController> log)
     {
         _sp = sp;
@@ -106,6 +108,7 @@ public class BackofficeController : ControllerBase
         _feedback = feedback;
         _punteggi = punteggi;
         _punteggiatore = punteggiatore;
+        _queue = queue;
         _log = log;
     }
 
@@ -348,6 +351,7 @@ public class BackofficeController : ControllerBase
                     modified = i.Modified,
                     previewUrl = Miniatura(i.ServerRelativeUrl),
                     fileUrl = Diretto(i.ServerRelativeUrl),
+                    pipeline = StatoDi(library, i),
                     deliverables = group.Count > 1
                         ? group.OrderBy(d => d.FileName).Select(d => new
                         {
@@ -359,6 +363,12 @@ public class BackofficeController : ControllerBase
                             // si sta per vendere non si puo' ne' guardare ne' scaricare, e l'unica
                             // verifica possibile resta aprire SharePoint a mano.
                             url = Diretto(d.ServerRelativeUrl),
+                            // Le date rendono visibile il ritracciamento: un vettoriale piu' recente
+                            // del raster e' stato rifatto dopo, ed e' l'unico modo di accorgersene
+                            // senza aprire SharePoint e confrontare a mano.
+                            d.Created,
+                            d.Modified,
+                            rifatto = PiuRecenteDi(d, i),
                         }).ToArray()
                         : null,
                     validation = new
@@ -574,6 +584,81 @@ public class BackofficeController : ControllerBase
             var group = PropagateToGroup(library, updated, value);
 
             return Ok(new { ok = true, item = Shape(library, updated), gruppo = group });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { ok = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Fa partire la pubblicazione subito, invece di aspettare il giro di sorveglianza.
+    ///
+    /// Il flag Invia viene guardato da una Logic App che interroga SharePoint ogni quindici minuti:
+    /// e' un ritardo accettabile per un lotto notturno, non per chi sta guardando la schermata e
+    /// vuole vedere se il file passa. Qui si scrive direttamente sulla coda che la Logic App
+    /// riempirebbe, con lo stesso messaggio: la funzione che pubblica non sa da dove arriva, e la
+    /// catena resta una sola.
+    ///
+    /// Il flag si alza lo stesso. Serve perche' la pipeline lo legge per sapere che il file e'
+    /// stato mandato, e perche' senza di quello un'esecuzione fallita non verrebbe piu' ritentata
+    /// dal giro di sorveglianza.
+    /// </summary>
+    [HttpPost("items/{id:int}/pubblica-ora")]
+    public async Task<IActionResult> PubblicaOra(int id, [FromQuery] string library = "ImagesToSend",
+                                                 [FromQuery] bool force = false,
+                                                 CancellationToken ct = default)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        if (!_queue.CanEnqueue)
+            return Ok(new { ok = false, error = "Storage della pipeline non configurato: resta il giro di sorveglianza ogni quindici minuti." });
+
+        try
+        {
+            var portatore = _sp.GetItem(library, id);
+
+            if (!force)
+            {
+                var v = _validator.Validate(portatore.Title, portatore.Description,
+                                            Punteggiatore.KeywordDi(portatore.Tags), "vector");
+                if (v.BlocksDispatch)
+                    return Ok(new
+                    {
+                        ok = false,
+                        blocked = true,
+                        error = "I metadati non superano la validazione: correggili o forza l'invio.",
+                        issues = v.Issues.Where(x => x.Severity == "error").Select(x => x.Message),
+                    });
+            }
+
+            // Prima si marca, poi si accoda: se l'accodamento fallisce resta il giro di
+            // sorveglianza a raccogliere il file, mentre accodare senza marcare lo farebbe
+            // pubblicare senza che nulla lo ricordi.
+            var aggiornato = _sp.SetInvia(library, id, true);
+            var gruppo = PropagateToGroup(library, aggiornato, true);
+
+            var consegne = new List<SharePointItem> { aggiornato };
+            consegne.AddRange(_sp.GetDeliverableSiblings(library, aggiornato));
+
+            var accodate = new List<string>();
+            foreach (var c in consegne)
+            {
+                var corpo = new
+                {
+                    title = c.Title,
+                    description = c.Description,
+                    tags = c.Tags,
+                    url = c.ServerRelativeUrl,
+                    Id = c.Id,
+                    Identifier = c.FileName,
+                };
+                if (await _queue.AccodaInvioAsync(corpo, ct)) accodate.Add(c.FileName);
+            }
+
+            _log.LogInformation("Pubblicazione immediata: accodate {N} consegne di {File}", accodate.Count, aggiornato.FileName);
+            return Ok(new { ok = true, accodate = accodate.Count, gruppo, item = Shape(library, aggiornato) });
         }
         catch (Exception ex)
         {
@@ -1087,8 +1172,10 @@ public class BackofficeController : ControllerBase
             i.Inviato,
             checkedOutBy = i.CheckedOutBy,
             modified = i.Modified,
+            created = i.Created,
             previewUrl = Miniatura(i.ServerRelativeUrl),
             fileUrl = Diretto(i.ServerRelativeUrl),
+            pipeline = StatoDi(library, i),
             validation = new
             {
                 score = v.Score,
@@ -1096,5 +1183,28 @@ public class BackofficeController : ControllerBase
                 issues = v.Issues.Select(x => new { x.Severity, x.Field, x.Message }),
             },
         };
+    }
+
+    /// <summary>Lo stato di pipeline, risolto qui e non dedotto da chi mostra.</summary>
+    private static object StatoDi(string library, SharePointItem i)
+    {
+        var (stato, etichetta, spiega) = StatoPipeline.Di(library, i.Invia, i.Inviato, i.Stato);
+        return new { stato, etichetta, spiega };
+    }
+
+    /// <summary>
+    /// Se questa consegna e' stata rifatta dopo il raster che la accompagna.
+    ///
+    /// E' il segno del ritracciamento: si rifanno SVG ed EPS e il JPEG resta com'era, quindi una
+    /// data piu' recente della sua dice che le curve non sono piu' quelle di partenza. Il confronto
+    /// vuole un margine, perche' i file di una stessa generazione si scrivono a pochi secondi
+    /// l'uno dall'altro e non vanno segnalati.
+    /// </summary>
+    private static bool PiuRecenteDi(SharePointItem consegna, SharePointItem portatore)
+    {
+        if (consegna.Id == portatore.Id) return false;
+        if (!DateTimeOffset.TryParse(consegna.Modified, out var quando)) return false;
+        if (!DateTimeOffset.TryParse(portatore.Modified, out var riferimento)) return false;
+        return quando - riferimento > TimeSpan.FromMinutes(2);
     }
 }

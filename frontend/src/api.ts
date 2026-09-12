@@ -103,6 +103,24 @@ export type Deliverable = {
   kind: string;
   carrier: boolean;
   url?: string;
+  /** Quando il file è entrato in libreria. */
+  created?: string;
+  /** L'ultima riscrittura: su un vettoriale è la data del tracciato. */
+  modified?: string;
+  /** Rifatto dopo il raster che l'accompagna, cioè ritracciato. */
+  rifatto?: boolean;
+};
+
+/**
+ * Dove si trova l'immagine lungo la pipeline.
+ *
+ * Lo decide il server: qui si mostra e basta. Dedurlo da invia/inviato/stato significherebbe
+ * riscrivere quelle regole in ogni schermata, e vederle divergere alla prima modifica.
+ */
+export type StatoPipeline = {
+  stato: "revisione" | "pronto" | "in-attesa" | "pubblicato" | "errore";
+  etichetta: string;
+  spiega: string;
 };
 
 /** Esito dell'importazione dell'esportazione Adobe. */
@@ -224,7 +242,10 @@ export type BackofficeItem = {
   /** Who holds the file checked out in SharePoint. Empty when nobody does. */
   checkedOutBy?: string;
   modified: string;
+  created?: string;
   previewUrl: string;
+  /** Dove si trova lungo la pipeline, risolto dal server. */
+  pipeline?: StatoPipeline;
   /** L'originale su SharePoint. Il browser lo apre con la sessione di chi guarda. */
   fileUrl?: string;
   /**
@@ -830,6 +851,17 @@ export const api = {
   backofficeSend(library: string, id: number, value = true, force = false): Promise<BackofficeMutation> {
     const q = new URLSearchParams({ library, value: String(value), force: String(force) });
     return f(`/api/backoffice/items/${id}/send?${q}`, { method: "POST" }).then(jsonOrThrow);
+  },
+  /**
+   * Fa partire la pubblicazione adesso, invece di aspettare il giro di sorveglianza.
+   *
+   * Alza il flag come l'invio normale, ma scrive anche sulla coda: il file parte in secondi
+   * invece che al prossimo quarto d'ora.
+   */
+  backofficePubblicaOra(library: string, id: number, force = false):
+      Promise<BackofficeMutation & { accodate?: number; gruppo?: number }> {
+    const q = new URLSearchParams({ library, force: String(force) });
+    return f(`/api/backoffice/items/${id}/pubblica-ora?${q}`, { method: "POST" }).then(jsonOrThrow);
   },
   backofficeMove(library: string, id: number, targetLibrary: string): Promise<{ ok: boolean; movedTo?: string; error?: string }> {
     return f(`/api/backoffice/items/${id}/move?library=${encodeURIComponent(library)}`, {

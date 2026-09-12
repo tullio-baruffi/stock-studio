@@ -286,16 +286,33 @@ export default function RevisioneView() {
    */
   const pubblica = stadio === "ImagesToSend";
 
+  /** Lo stato che il server ha gia' risolto: qui non si deduce niente. */
+  const statoCorrente = corrente?.pipeline?.stato;
+  /** Chiesto e non ancora partito: l'invio non si ripete. */
+  const giaInviato = statoCorrente === "in-attesa";
+
+  /**
+   * Dopo un'azione andata a buon fine si torna alla galleria.
+   *
+   * Restare nel dettaglio di un file che ha appena cambiato stato vuol dire guardare qualcosa che
+   * non e' piu' vero: l'immagine e' uscita dall'elenco, i pulsanti non hanno piu' senso, e l'unica
+   * cosa da fare e' andarsene. Tanto vale farlo da soli.
+   */
+  const tornaAllaGalleria = useCallback(() => {
+    setApertaId(null);
+    setZoom(false);
+    setConsegna(null);
+    setNota("");
+  }, []);
+
   const approva = useCallback(async (id?: number) => {
     const bersaglio = id ?? corrente?.id;
     // Dall'ultima libreria non si va avanti: approvare non vorrebbe dire niente.
     if (!bersaglio || occupato || !prossimo) return;
     const it = items.find((x) => x.id === bersaglio);
-    // Chi prenderà il suo posto: si calcola prima di toglierla, perché dopo non c'è più.
-    const successiva = visibili[visibili.findIndex((x) => x.id === bersaglio) + 1]?.id
-                    ?? visibili[visibili.findIndex((x) => x.id === bersaglio) - 1]?.id
-                    ?? null;
+    const dalDettaglio = apertaId === bersaglio;
     setOccupato(true);
+    setAzione("approva");
     try {
       const esitoOk = () => {
         setApprovate((n) => n + 1);
@@ -307,8 +324,7 @@ export default function RevisioneView() {
         });
         setItems((cur) => cur.filter((x) => x.id !== bersaglio));
         setSelezione((s) => { const n = new Set(s); n.delete(bersaglio); return n; });
-        // Avanzare da soli è ciò che serve per andare avanti senza toccare altro.
-        setApertaId((a) => (a === bersaglio ? successiva : a));
+        if (dalDettaglio) tornaAllaGalleria();
       };
 
       if (pubblica) {
@@ -325,8 +341,45 @@ export default function RevisioneView() {
       setEsito({ testo: (e as Error).message, tipo: "errore" });
     } finally {
       setOccupato(false);
+      setAzione(null);
     }
-  }, [corrente, occupato, items, visibili, pubblica, prossimo, stadio]);
+  }, [corrente, occupato, items, visibili, pubblica, prossimo, stadio, apertaId, tornaAllaGalleria]);
+
+  /**
+   * Pubblica adesso: alza il flag e mette il gruppo in coda, senza aspettare il giro di
+   * sorveglianza.
+   */
+  const pubblicaOra = useCallback(async (id?: number) => {
+    const bersaglio = id ?? corrente?.id;
+    if (!bersaglio || occupato || !pubblica) return;
+    const it = items.find((x) => x.id === bersaglio);
+    const dalDettaglio = apertaId === bersaglio;
+    setOccupato(true);
+    setAzione("ora");
+    try {
+      const r = await api.backofficePubblicaOra(stadio, bersaglio);
+      if (r.blocked) {
+        setEsito({ testo: `${r.error ?? "Metadati non validi."} ${(r.issues ?? []).join(" · ")}`, tipo: "errore" });
+      } else if (r.ok) {
+        setApprovate((n) => n + 1);
+        const quante = r.accodate ?? 0;
+        setEsito({
+          testo: `${it?.fileName ?? bersaglio} → in coda adesso (${quante} ${quante === 1 ? "consegna" : "consegne"}), parte entro pochi secondi`,
+          tipo: "ok",
+        });
+        setItems((cur) => cur.filter((x) => x.id !== bersaglio));
+        setSelezione((s) => { const n = new Set(s); n.delete(bersaglio); return n; });
+        if (dalDettaglio) tornaAllaGalleria();
+      } else {
+        setEsito({ testo: r.error ?? "Accodamento non riuscito.", tipo: "errore" });
+      }
+    } catch (e) {
+      setEsito({ testo: (e as Error).message, tipo: "errore" });
+    } finally {
+      setOccupato(false);
+      setAzione(null);
+    }
+  }, [corrente, occupato, items, pubblica, stadio, apertaId, tornaAllaGalleria]);
 
   /** Segna e basta: la cancellazione vera avviene solo dal riepilogo, con conferma. */
   const segnaScarto = useCallback((id?: number) => {
@@ -610,13 +663,29 @@ export default function RevisioneView() {
       if (k === "arrowright" || k === "arrowdown") { e.preventDefault(); vai(1); }
       else if (k === "arrowleft" || k === "arrowup") { e.preventDefault(); vai(-1); }
       else if (k === "a") { e.preventDefault(); approva(); }
+      else if (k === "p") { e.preventDefault(); pubblicaOra(); }
       else if (k === "x") { e.preventDefault(); segnaScarto(); }
       else if (k === "r") { e.preventDefault(); rigenera(); }
       else if (k === " ") { e.preventDefault(); setZoom((z) => !z); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [apertaId, vai, approva, segnaScarto, rigenera]);
+  }, [apertaId, vai, approva, pubblicaOra, segnaScarto, rigenera]);
+
+  /**
+   * Una data leggibile, o niente.
+   *
+   * Serve a confrontare a colpo d'occhio le consegne di uno stesso gruppo: l'ora conta quanto il
+   * giorno, perche' un ritracciamento avviene di solito lo stesso giorno del tracciato.
+   */
+  const quando = (s?: string) => {
+    if (!s) return "";
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString(undefined, {
+      day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+  };
 
   const classePunteggio = (n: number) => (n >= 90 ? "alto" : n >= 70 ? "medio" : "basso");
 
@@ -884,6 +953,20 @@ export default function RevisioneView() {
               <div className="cn-file">{corrente.fileName}</div>
 
               {/*
+                Dove si trova l'immagine lungo la pipeline. Lo stato lo decide il server: qui si
+                mostra e basta. Prima non c'era, e la differenza fra "pronto" e "gia' mandato, sto
+                aspettando" si poteva solo indovinare -- col risultato di premere Invia una seconda
+                volta credendo che la prima non avesse funzionato.
+              */}
+              {corrente.pipeline && (
+                <div className={`cn-stato st-${corrente.pipeline.stato}`}>
+                  <strong>{corrente.pipeline.etichetta}</strong>
+                  <span>{corrente.pipeline.spiega}</span>
+                  {corrente.stato && <em title={corrente.stato}>{corrente.stato}</em>}
+                </div>
+              )}
+
+              {/*
                 Lo scarico c'era solo per i formati che il browser non sa disegnare, come se gli
                 altri non servisse portarseli via. Ma il momento in cui si vuole un file sul disco
                 e' proprio questo: si sta guardando quell'immagine. Qui ci sono tutti, con la
@@ -916,6 +999,23 @@ export default function RevisioneView() {
                       >
                         {d.kind}
                       </button>
+                    ))}
+                  </div>
+
+                  {/*
+                    Le date dicono se i vettoriali sono ancora quelli di partenza. Ritracciare
+                    riscrive SVG ed EPS e lascia il JPEG com'era: senza le date l'unico modo di
+                    accorgersene era aprire SharePoint e confrontare a mano.
+                  */}
+                  <div className="cn-date">
+                    {consegne.map((d) => (
+                      <div key={`dt-${d.id}`} className={`cn-data ${d.rifatto ? "rifatto" : ""}`}>
+                        <span className="cn-data-k">{d.kind}</span>
+                        <span className="cn-data-v" title={`creato ${quando(d.created)}`}>
+                          {quando(d.modified) || "—"}
+                        </span>
+                        {d.rifatto && <span className="cn-data-b">ritracciato</span>}
+                      </div>
                     ))}
                   </div>
                 </>
@@ -988,13 +1088,38 @@ export default function RevisioneView() {
               Succ →
             </button>
 
-            {prossimo && (
+            {/*
+              I pulsanti seguono lo stato. Prima erano sempre gli stessi: su un file gia' mandato
+              "Invia" restava li' invitante, e premerlo non faceva niente di visibile -- o peggio,
+              rimetteva in coda qualcosa che era gia' in viaggio.
+            */}
+            {prossimo && !giaInviato && (
               <button className="btn small primary" onClick={() => approva()} disabled={occupato}
                       title={pubblica
                         ? "Alza il flag Invia: la pipeline carica il gruppo sui marketplace e lo sposta fra i Pubblicati solo se l'invio riesce (A)"
                         : `Approva e passa a «${STADI.find((s) => s.id === prossimo)?.label}» (A)`}>
-                {pubblica ? "▲ Invia ai marketplace" : "✓ Approva"}
+                {azione === "approva"
+                  ? <><Rotella /> {pubblica ? "Invio…" : "Approvo…"}</>
+                  : (pubblica ? "▲ Invia ai marketplace" : "✓ Approva")}
               </button>
+            )}
+
+            {/*
+              La scorciatoia per chi non vuole aspettare: il flag lo guarda una Logic App che
+              interroga SharePoint ogni quindici minuti, e chi sta davanti alla schermata quei
+              quindici minuti li vive come un guasto. Qui il file finisce subito in coda.
+            */}
+            {pubblica && (
+              <button className="btn small" onClick={() => pubblicaOra()} disabled={occupato}
+                      title="Mette il gruppo in coda adesso, senza aspettare il giro di sorveglianza (P)">
+                {azione === "ora" ? <><Rotella /> Accodo…</> : "⚡ Pubblica ora"}
+              </button>
+            )}
+
+            {giaInviato && (
+              <span className="cn-attesa" title={corrente.pipeline?.spiega}>
+                ⏳ gia&apos; inviato, in attesa
+              </span>
             )}
             <button className={`btn small ${daScartare.has(corrente.id) ? "danger" : ""}`}
                     onClick={() => segnaScarto()}

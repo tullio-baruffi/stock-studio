@@ -37,6 +37,22 @@ public class QueueDispatcher
         _log.LogInformation("Enqueued {Blob} su '{Queue}'", message.BlobName, _s.QueueName);
     }
 
+    /// <summary>Accoda su 'images-to-send': e' la stessa coda su cui scrive la Logic App.</summary>
+    public async Task<bool> AccodaInvioAsync(object corpo, CancellationToken ct)
+    {
+        if (!CanEnqueue)
+        {
+            _log.LogWarning("Nessuna StorageConnectionString: non posso accodare l'invio.");
+            return false;
+        }
+
+        var client = new QueueClient(_s.StorageConnectionString, "images-to-send",
+            new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 });
+        await client.CreateIfNotExistsAsync(cancellationToken: ct);
+        await client.SendMessageAsync(System.Text.Json.JsonSerializer.Serialize(corpo), ct);
+        return true;
+    }
+
     /// <summary>Reads approximate message counts for the pipeline queues (backlog/health).</summary>
     public async Task<IReadOnlyList<object>> GetDepthsAsync(IEnumerable<string> names, CancellationToken ct)
     {
