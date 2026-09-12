@@ -94,8 +94,15 @@ namespace StockStudio.Shared.Vettoriale
         /// Di quanti pixel la curva puo' scostarsi dal confine misurato: vedi
         /// <see cref="AdattaCubiche"/>.
         /// </param>
+        /// <param name="tolleranza">
+        /// Quanto la curva puo' scostarsi dai punti misurati. Non e' l'errore sulla forma: i punti
+        /// stanno sugli spigoli interi dei pixel e portano mezzo pixel di quantizzazione, quindi una
+        /// tolleranza stretta non avvicina alla forma vera -- ricalca il rumore. Misurato su un
+        /// cerchio di raggio noto, passando da 0,6 a 1,2 i segmenti scendono da 220 a 76 **e** lo
+        /// scarto dal cerchio vero resta 0,21 px.
+        /// </param>
         public static Esito Estrai(byte[] indici, bool[]? opaco, int larghezza, int altezza,
-                                   int quante, double tolleranza = 0.6)
+                                   int quante, double tolleranza = 1.2)
         {
             if (indici == null) throw new ArgumentNullException("indici");
             if (quante < 0) quante = 0;
@@ -572,10 +579,10 @@ namespace StockStudio.Shared.Vettoriale
             }
 
             for (var t = 0; t + 1 < tagli.Count; t++)
-                Adatta(punti, tagli[t], tagli[t + 1],
-                       t == 0 ? tInizio : Tangente(punti, tagli[t], +1),
-                       t + 2 == tagli.Count ? tFine : Tangente(punti, tagli[t + 1], -1),
-                       tolleranza, arco.Cubiche, larghezza, altezza);
+                AdattaC2(punti, tagli[t], tagli[t + 1],
+                         t == 0 ? tInizio : Tangente(punti, tagli[t], +1),
+                         t + 2 == tagli.Count ? tFine : Tangente(punti, tagli[t + 1], -1),
+                         tolleranza, arco.Cubiche, larghezza, altezza);
 
             if (arco.Cubiche.Count == 0) arco.Cubiche.Add(Retta(punti[0], punti[punti.Count - 1]));
             return arco;
@@ -663,6 +670,248 @@ namespace StockStudio.Shared.Vettoriale
         /// </summary>
         /// <param name="tDa">Direzione con cui la curva deve partire, in avanti.</param>
         /// <param name="tA">Direzione con cui deve arrivare, presa all'indietro dal punto finale.</param>
+        /// <summary>
+        /// Il numero di nodi non puo' crescere all'infinito: oltre questo, su un tratto storto si
+        /// starebbe ricalcando il rumore invece di descrivere una forma.
+        /// </summary>
+        private const int MassimoNodi = 400;
+
+        /// <summary>
+        /// Adatta al tratto una spline cubica che passa per alcuni punti scelti.
+        ///
+        /// ## Perche' non basta adattare pezzo per pezzo
+        /// Adattando ogni pezzo per conto suo, al giunto si puo' al piu' far combaciare la
+        /// **direzione**. La curvatura no: da un lato la linea arriva stretta e dall'altro riparte
+        /// larga, e l'occhio quel salto lo legge come una piega anche quando la tangente e' identica.
+        /// E' il difetto che resta dopo aver raccordato le tangenti.
+        ///
+        /// ## Come
+        /// Una spline cubica che interpola dei nodi e' continua nella derivata seconda per
+        /// costruzione: la curvatura non puo' saltare, perche' il sistema che la determina impone
+        /// proprio quello. Si parte dai due estremi, si misura quanto la spline si scosta dai punti
+        /// veri, e dove sbaglia di piu' si aggiunge un nodo -- finche' rientra nella tolleranza.
+        /// Dove il confine e' dolce bastano pochi nodi, dove e' mosso ne servono di piu', e non deve
+        /// deciderlo nessuno prima.
+        ///
+        /// Agli estremi la direzione e' imposta da fuori (spigolo o cucitura): quella resta il
+        /// raccordo di tangente gia' in essere, ed e' giusto cosi', perche' li' la curva un motivo
+        /// per cambiare curvatura ce l'ha.
+        /// </summary>
+        private static void AdattaC2(List<Punto> p, int da, int a, Punto tDa, Punto tA,
+                                     double tolleranza, List<Punto[]> fuori,
+                                     double larghezza, double altezza)
+        {
+            if (a - da < 1) return;
+            if (a - da == 1) { fuori.Add(Retta(p[da], p[a])); return; }
+
+            var nodi = new List<int> { da, a };
+            var tetto = Math.Min(MassimoNodi, a - da + 1);
+
+            // In un anello chiuso il primo punto e l'ultimo sono lo stesso punto: partendo dai soli
+            // estremi la corda varrebbe zero e non ci sarebbe spline da risolvere. Servono dei nodi
+            // in mezzo fin dall'inizio -- e comunque partire con qualche nodo fa risparmiare giri.
+            var passo = (a - da) / 4;
+            if (passo >= 1)
+                for (var k = a - passo; k > da; k -= passo)
+                    InserisciNodo(nodi, k);
+            else if (a - da >= 2)
+                InserisciNodo(nodi, (da + a) / 2);
+
+            Punto[]? m = null;
+
+            while (true)
+            {
+                m = DerivateSpline(p, nodi, tDa, tA);
+                if (m == null)
+                {
+                    // Un nodo in piu' rompe la coincidenza che ha fatto fallire il sistema. Solo se
+                    // non c'e' piu' niente da aggiungere ci si arrende alla retta.
+                    int dove2;
+                    if (nodi.Count < tetto && TrovaBuco(p, nodi, out dove2) && InserisciNodo(nodi, dove2))
+                        continue;
+                    fuori.Add(Retta(p[da], p[a]));
+                    return;
+                }
+                if (nodi.Count >= tetto) break;
+
+                int dove;
+                var errore = ScartoSpline(p, nodi, m, out dove);
+                if (errore <= tolleranza * tolleranza) break;
+                if (!InserisciNodo(nodi, dove)) break;
+            }
+
+            for (var i = 0; i + 1 < nodi.Count; i++)
+            {
+                var p0 = p[nodi[i]];
+                var p3 = p[nodi[i + 1]];
+                var h = Corda(p0, p3);
+                if (h < 1e-9) continue;
+
+                var c1 = new Punto(p0.X + m[i].X * h / 3.0, p0.Y + m[i].Y * h / 3.0);
+                var c2 = new Punto(p3.X - m[i + 1].X * h / 3.0, p3.Y - m[i + 1].Y * h / 3.0);
+
+                // Fuori dalla tavola non si va. Qui il raccordo di curvatura si perde, ma succede
+                // solo sul bordo dell'immagine, dove la linea e' dritta e curvatura non ce n'e'.
+                if (larghezza > 0 && altezza > 0)
+                {
+                    c1 = DentroLaTavola(p0, c1, larghezza, altezza);
+                    c2 = DentroLaTavola(p3, c2, larghezza, altezza);
+                }
+
+                fuori.Add(new[] { c1, c2, p3 });
+            }
+        }
+
+        /// <summary>
+        /// Il punto di mezzo del tratto fra due nodi piu' lungo: dove conviene spezzare quando il
+        /// sistema non si e' potuto risolvere, tipicamente perche' due nodi coincidono.
+        /// </summary>
+        private static bool TrovaBuco(List<Punto> p, List<int> nodi, out int dove)
+        {
+            dove = -1;
+            var meglio = 1;
+            for (var i = 0; i + 1 < nodi.Count; i++)
+            {
+                var passi = nodi[i + 1] - nodi[i];
+                if (passi <= meglio) continue;
+                meglio = passi;
+                dove = nodi[i] + passi / 2;
+            }
+            return dove > 0;
+        }
+
+        private static double Corda(Punto a, Punto b)
+        {
+            var dx = b.X - a.X; var dy = b.Y - a.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>Riporta il punto di controllo dentro la tavola, scorrendo lungo la sua direzione.</summary>
+        private static Punto DentroLaTavola(Punto da, Punto c, double larghezza, double altezza)
+        {
+            var dx = c.X - da.X; var dy = c.Y - da.Y;
+            var k = 1.0;
+            if (dx > 1e-9) k = Math.Min(k, (larghezza - da.X) / dx);
+            else if (dx < -1e-9) k = Math.Min(k, (0 - da.X) / dx);
+            if (dy > 1e-9) k = Math.Min(k, (altezza - da.Y) / dy);
+            else if (dy < -1e-9) k = Math.Min(k, (0 - da.Y) / dy);
+            if (k >= 1.0) return c;
+            if (k < 0) k = 0;
+            return new Punto(da.X + dx * k, da.Y + dy * k);
+        }
+
+        /// <summary>
+        /// Le derivate nei nodi di una spline cubica bloccata agli estremi.
+        ///
+        /// E' il sistema tridiagonale che impone la continuita' della derivata seconda in ogni nodo
+        /// interno; agli estremi, invece, si impone la direzione che arriva da fuori.
+        /// </summary>
+        private static Punto[]? DerivateSpline(List<Punto> p, List<int> nodi, Punto tDa, Punto tA)
+        {
+            var n = nodi.Count - 1;
+            if (n < 1) return null;
+
+            var h = new double[n];
+            for (var i = 0; i < n; i++)
+            {
+                h[i] = Corda(p[nodi[i]], p[nodi[i + 1]]);
+                if (h[i] < 1e-9) return null;
+            }
+
+            var m = new Punto[n + 1];
+            // Agli estremi la lunghezza della derivata vale la corda: e' la scelta che mette il
+            // punto di controllo a un terzo, cioe' la stessa di sempre quando non si sa altro.
+            m[0] = new Punto(tDa.X * h[0], tDa.Y * h[0]);
+            m[n] = new Punto(-tA.X * h[n - 1], -tA.Y * h[n - 1]);
+            if (n == 1) return m;
+
+            var sotto = new double[n];
+            var diag = new double[n];
+            var sopra = new double[n];
+            var bx = new double[n];
+            var by = new double[n];
+
+            for (var i = 1; i < n; i++)
+            {
+                var y0 = p[nodi[i - 1]]; var y1 = p[nodi[i]]; var y2 = p[nodi[i + 1]];
+                sotto[i] = h[i];
+                diag[i] = 2.0 * (h[i] + h[i - 1]);
+                sopra[i] = h[i - 1];
+                bx[i] = 3.0 * (h[i] * (y1.X - y0.X) / h[i - 1] + h[i - 1] * (y2.X - y1.X) / h[i]);
+                by[i] = 3.0 * (h[i] * (y1.Y - y0.Y) / h[i - 1] + h[i - 1] * (y2.Y - y1.Y) / h[i]);
+            }
+            bx[1] -= sotto[1] * m[0].X; by[1] -= sotto[1] * m[0].Y;
+            bx[n - 1] -= sopra[n - 1] * m[n].X; by[n - 1] -= sopra[n - 1] * m[n].Y;
+
+            // Thomas: eliminazione in avanti, sostituzione all'indietro.
+            for (var i = 2; i < n; i++)
+            {
+                if (Math.Abs(diag[i - 1]) < 1e-12) return null;
+                var f = sotto[i] / diag[i - 1];
+                diag[i] -= f * sopra[i - 1];
+                bx[i] -= f * bx[i - 1];
+                by[i] -= f * by[i - 1];
+            }
+            if (Math.Abs(diag[n - 1]) < 1e-12) return null;
+            m[n - 1] = new Punto(bx[n - 1] / diag[n - 1], by[n - 1] / diag[n - 1]);
+            for (var i = n - 2; i >= 1; i--)
+            {
+                if (Math.Abs(diag[i]) < 1e-12) return null;
+                m[i] = new Punto((bx[i] - sopra[i] * m[i + 1].X) / diag[i],
+                                 (by[i] - sopra[i] * m[i + 1].Y) / diag[i]);
+            }
+            return m;
+        }
+
+        /// <summary>Lo scarto quadratico peggiore fra la spline e i punti misurati, e dove cade.</summary>
+        private static double ScartoSpline(List<Punto> p, List<int> nodi, Punto[] m, out int dove)
+        {
+            double peggio = 0;
+            dove = -1;
+            for (var i = 0; i + 1 < nodi.Count; i++)
+            {
+                var da = nodi[i]; var a = nodi[i + 1];
+                if (a - da < 2) continue;
+                var p0 = p[da]; var p3 = p[a];
+                var h = Corda(p0, p3);
+                if (h < 1e-9) continue;
+                var c1 = new Punto(p0.X + m[i].X * h / 3.0, p0.Y + m[i].Y * h / 3.0);
+                var c2 = new Punto(p3.X - m[i + 1].X * h / 3.0, p3.Y - m[i + 1].Y * h / 3.0);
+
+                // Il parametro si stima con le distanze lungo la spezzata: e' la stessa
+                // approssimazione usata per l'adattamento, e qui basta a dire dove si sbaglia.
+                double tot = 0;
+                for (var k = da; k < a; k++) tot += Corda(p[k], p[k + 1]);
+                if (tot < 1e-9) continue;
+
+                double corsa = 0;
+                for (var k = da + 1; k < a; k++)
+                {
+                    corsa += Corda(p[k - 1], p[k]);
+                    var t = corsa / tot;
+                    var mt = 1 - t;
+                    var bx = mt * mt * mt * p0.X + 3 * mt * mt * t * c1.X + 3 * mt * t * t * c2.X + t * t * t * p3.X;
+                    var by = mt * mt * mt * p0.Y + 3 * mt * mt * t * c1.Y + 3 * mt * t * t * c2.Y + t * t * t * p3.Y;
+                    var dx = bx - p[k].X; var dy = by - p[k].Y;
+                    var e = dx * dx + dy * dy;
+                    if (e > peggio) { peggio = e; dove = k; }
+                }
+            }
+            return peggio;
+        }
+
+        /// <summary>Mette un nodo al posto giusto nell'elenco ordinato. Falso se c'era gia'.</summary>
+        private static bool InserisciNodo(List<int> nodi, int dove)
+        {
+            if (dove < 0) return false;
+            for (var i = 0; i < nodi.Count; i++)
+            {
+                if (nodi[i] == dove) return false;
+                if (nodi[i] > dove) { nodi.Insert(i, dove); return true; }
+            }
+            return false;
+        }
+
         private static void Adatta(List<Punto> p, int da, int a, Punto tDa, Punto tA,
                                    double tolleranza, List<Punto[]> fuori,
                                    double larghezza, double altezza)

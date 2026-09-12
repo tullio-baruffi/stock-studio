@@ -259,6 +259,57 @@ public class ContorniTest
         }
     }
 
+    /// <summary>
+    /// Le cubiche devono davvero descrivere la forma.
+    ///
+    /// Un difetto vero e' passato inosservato proprio qui: un anello chiuso finiva in una sola
+    /// cubica di lunghezza zero -- la figura spariva dal disegno -- e nessun controllo se ne
+    /// accorgeva, perche' le zone restavano intatte e si guardavano quelle. Le zone dicono quali
+    /// confini esistono; sono le cubiche a essere consegnate al cliente.
+    /// </summary>
+    [Fact]
+    public void LeCubicheDescrivonoLaForma()
+    {
+        const int w = 200, h = 200, raggio = 60;
+        var contorni = Contorni.Estrai(Disco(w, h, raggio), null, w, h, 2);
+
+        // Il contorno del disco: l'arco che non corre sul bordo della tavola.
+        var disco = contorni.Archi
+            .Where(a => a.Inizio.X > 2 && a.Inizio.Y > 2 && a.Inizio.X < w - 2 && a.Inizio.Y < h - 2)
+            .ToList();
+        Assert.NotEmpty(disco);
+
+        var lunghezza = 0.0;
+        var punti = new List<Punto>();
+        foreach (var arco in disco)
+        {
+            var p = arco.Inizio;
+            foreach (var c in arco.Cubiche)
+            {
+                for (var i = 1; i <= 8; i++)
+                {
+                    var t = i / 8.0; var mt = 1 - t;
+                    punti.Add(new Punto(
+                        mt*mt*mt*p.X + 3*mt*mt*t*c[0].X + 3*mt*t*t*c[1].X + t*t*t*c[2].X,
+                        mt*mt*mt*p.Y + 3*mt*mt*t*c[0].Y + 3*mt*t*t*c[1].Y + t*t*t*c[2].Y));
+                }
+                lunghezza += Math.Sqrt((c[2].X - p.X) * (c[2].X - p.X) + (c[2].Y - p.Y) * (c[2].Y - p.Y));
+                p = c[2];
+            }
+        }
+
+        // Il giro deve misurare quanto la circonferenza, non zero.
+        var atteso = 2 * Math.PI * raggio;
+        Assert.InRange(lunghezza, atteso * 0.85, atteso * 1.15);
+
+        // E ogni suo punto deve stare sul cerchio, non altrove.
+        foreach (var q in punti)
+        {
+            var r = Math.Sqrt((q.X - w / 2.0) * (q.X - w / 2.0) + (q.Y - h / 2.0) * (q.Y - h / 2.0));
+            Assert.InRange(r, raggio - 2.0, raggio + 2.0);
+        }
+    }
+
     private static (byte[] Mappa, int Quante) Mappa(string quale, int w, int h)
     {
         return quale switch
