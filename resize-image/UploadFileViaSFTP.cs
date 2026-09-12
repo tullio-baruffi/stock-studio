@@ -214,20 +214,62 @@ namespace MJ.Classifier
         {
             var outcomes = new List<UploadOutcome>();
 
+            // Le regole per formato valgono solo per le consegne vettoriali, dove il JPEG e'
+            // l'anteprima di un lavoro che si vende come curve e mandarlo dove e' gia' andato il
+            // vettoriale significherebbe proporre due volte la stessa cosa. Una fotografia il JPEG
+            // lo e' e basta: va a tutte le destinazioni, o non si pubblicherebbe da nessuna parte.
+            var vettoriale = EVettoriale(fileName)
+                          || SharePointHelper.EsisteUnVettorialeAccanto(_sharePointSettings, data.ServerRelativeUrl,
+                                                                        context.FunctionDirectory, log);
+            if (!vettoriale)
+                log.LogInformation($"{fileName}: nessun tracciato accanto, va a tutte le destinazioni");
+
+            var sftp = PerQuestoFormato(_sftpSettings, fileName, vettoriale, log);
+            var ftp = PerQuestoFormato(_ftpSettings, fileName, vettoriale, log);
+            var winscp = PerQuestoFormato(_winscpFtpSettings, fileName, vettoriale, log);
+
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to SFTP");
-            _sftpClient.Configure(_sftpSettings, log);
+            _sftpClient.Configure(sftp, log);
             outcomes.AddRange(_sftpClient.UploadFile(fileStreamWithExifMetadata, fileName));
 
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to FTP");
-            _ftpClient.Configure(_ftpSettings, log);
+            _ftpClient.Configure(ftp, log);
             outcomes.AddRange(_ftpClient.UploadFile(fileStreamWithExifMetadata, fileName));
 
             log.LogInformation($"Uploading file {data.ServerRelativeUrl} to WinSCP SFTP");
-            _winscpFtpSettings.ForEach(x => x.FunctionAppDirectory = context.FunctionAppDirectory);
-            _winSCPFTPClient.Configure(_winscpFtpSettings, log);
+            winscp.ForEach(x => x.FunctionAppDirectory = context.FunctionAppDirectory);
+            _winSCPFTPClient.Configure(winscp, log);
             outcomes.AddRange(_winSCPFTPClient.UploadFile(fileStreamWithExifMetadata, fileName));
 
             return outcomes;
+        }
+
+        /// <summary>
+        /// Le destinazioni che accettano il formato di questo file. Quelle escluse finiscono nel
+        /// log per nome: un invio che non parte deve restare spiegabile, o sembrera' un guasto.
+        ///
+        /// Fuori da una consegna vettoriale non si filtra niente: le regole servono a non proporre
+        /// due volte lo stesso lavoro, e dove il vettoriale non c'e' non c'e' nulla da evitare.
+        /// </summary>
+        private static List<T> PerQuestoFormato<T>(List<T> destinazioni, string fileName,
+                                                   bool vettoriale, ILogger log)
+            where T : BaseSettings
+        {
+            if (destinazioni == null || destinazioni.Count == 0) return new List<T>();
+            if (!vettoriale) return new List<T>(destinazioni);
+
+            var ammesse = destinazioni.Where(d => d.AccettaIlFormato(fileName)).ToList();
+            var escluse = destinazioni.Where(d => !d.AccettaIlFormato(fileName)).Select(d => d.Name).ToList();
+            if (escluse.Count > 0)
+                log.LogInformation($"{fileName}: saltate per formato -> {string.Join(", ", escluse)}");
+            return ammesse;
+        }
+
+        /// <summary>Un file che e' gia' di per se' un tracciato.</summary>
+        private static bool EVettoriale(string fileName)
+        {
+            var e = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
+            return e == ".svg" || e == ".eps" || e == ".ai";
         }
 
         /// <summary>
@@ -237,6 +279,9 @@ namespace MJ.Classifier
         /// </summary>
         private static string DescribeOutcomes(List<UploadOutcome> outcomes)
         {
+            if (outcomes.Count == 0)
+                return "nessuna destinazione tratta questo formato";
+
             var delivered = outcomes.Where(o => o.Succeeded).Select(o => o.Destination).ToList();
             var refused = outcomes.Where(o => !o.Succeeded).ToList();
 

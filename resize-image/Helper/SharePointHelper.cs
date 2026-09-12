@@ -175,6 +175,66 @@ namespace MJ.Classifier.Helpers
         /// id and the server-relative url. Without them the classification message could not point
         /// back at the file that was just written.
         /// </summary>
+        /// <summary>
+        /// Se accanto a questo file, nella stessa cartella e con lo stesso nome, c'e' un
+        /// vettoriale.
+        ///
+        /// Serve a distinguere il JPEG di un gruppo vettoriale -- dove e' l'anteprima di una
+        /// consegna che si vende come curve -- dalla fotografia, che il JPEG lo e' e basta. Le due
+        /// cose vanno a destinazioni diverse, e dal solo nome del file non si distinguono.
+        ///
+        /// Si chiedono i due nomi precisi invece di elencare la cartella: nella radice di una
+        /// libreria da migliaia di righe un elenco costerebbe quanto tutto il resto dell'invio.
+        /// </summary>
+        public static bool EsisteUnVettorialeAccanto(SharePointSettings sharePointSettings,
+                                                     string serverRelativeUrl,
+                                                     string functionDirectory, ILogger log)
+        {
+            var punto = serverRelativeUrl.LastIndexOf('.');
+            if (punto < 0) return false;
+            var senzaEstensione = serverRelativeUrl.Substring(0, punto);
+
+            try
+            {
+                var certificatePath = Path.GetFullPath(Path.Combine(functionDirectory, sharePointSettings.CertificatePath));
+                var authManager = new AuthenticationManager(sharePointSettings.ClientId, certificatePath, string.Empty, sharePointSettings.Tenant);
+                using var clientContext = authManager.GetContext(sharePointSettings.SiteUrl);
+
+                var web = clientContext.Web;
+                clientContext.Load(web);
+                clientContext.ExecuteQuery();
+
+                foreach (var estensione in new[] { ".svg", ".eps", ".ai" })
+                {
+                    var url = senzaEstensione + estensione;
+                    if (!url.StartsWith(web.ServerRelativeUrl)) url = $"{web.ServerRelativeUrl}{url}";
+
+                    var file = web.GetFileByServerRelativeUrl(url);
+                    clientContext.Load(file, f => f.Exists);
+                    try
+                    {
+                        clientContext.ExecuteQuery();
+                        if (file.Exists)
+                        {
+                            log.LogInformation($"{Path.GetFileName(serverRelativeUrl)}: gruppo vettoriale (trovato {estensione})");
+                            return true;
+                        }
+                    }
+                    catch { /* non esiste: si prova l'estensione successiva */ }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non sapere e' diverso da sapere di no. Se la verifica non riesce si tratta il file
+                // come una consegna vettoriale, cioe' si applicano le regole per formato: meglio un
+                // invio in meno che lo stesso lavoro mandato due volte allo stesso marketplace.
+                log.LogWarning(ex, $"{Path.GetFileName(serverRelativeUrl)}: impossibile stabilire se sia un gruppo vettoriale, lo tratto come tale");
+                return true;
+            }
+
+            return false;
+        }
+
         public static (int ItemId, string ServerRelativeUrl) UploadFileToSharePointWithId(
             SharePointSettings sharePointSettings, MemoryStream memoryStream, string fileName,
             string folderUrl, string functionDirectory, ILogger log)
