@@ -272,17 +272,30 @@ namespace MJ.Classifier
                           && requestedThreshold.Value >= 0
                           && requestedThreshold.Value <= 255;
                 var threshold = manual ? requestedThreshold.Value : ComputeOtsu(src);
+                var invertito = false;
                 using (var bw = src.Clone())
                 {
                     bw.Mutate(x => x.BinaryThreshold(threshold / 255f));
 
                     // potrace traccia il nero su bianco: un'immagine prevalentemente scura darebbe
                     // il negativo della silhouette voluta.
-                    if (BlackFraction(bw) > 0.5) bw.Mutate(x => x.Invert());
+                    if (BlackFraction(bw) > 0.5) { bw.Mutate(x => x.Invert()); invertito = true; }
 
                     bw.SaveAsBmp(bmpPath, new BmpEncoder { BitsPerPixel = BmpBitsPerPixel.Pixel24 });
+                }
 
-                    using var jpg = bw.Clone();
+                // Il JPEG di consegna non esce piu' dalla bitmap della soglia. Quella ha due soli
+                // livelli: la sfumatura che l'originale aveva sui bordi -- i pixel grigi che fanno
+                // di una diagonale una diagonale e non una scala -- li' e' gia' stata buttata via,
+                // e la compressione ci aggiunge il pulviscolo sul bianco.
+                //
+                // Conta doppio: e' l'immagine che il cliente vede nei risultati di ricerca, ed e'
+                // anche quella che si guarda in revisione. Giudicare il tracciato da li' vuol dire
+                // giudicarlo dal peggior surrogato che ne esista, e il vettoriale si prende la colpa
+                // di un difetto che non ha.
+                using (var jpg = src.Clone())
+                {
+                    SogliaMorbida(jpg, threshold, invertito);
                     Downscale(jpg, JpegLongEdge);
                     jpg.SaveAsJpeg(jpgPath, new JpegEncoder { Quality = JpegQuality });
                 }
@@ -340,6 +353,46 @@ namespace MJ.Classifier
 
             log.LogInformation($"Tracciato a colori: {tavolozza.Colori.Length} tinte, " +
                                $"{contorni.Archi.Count} confini");
+        }
+
+        /// <summary>
+        /// La soglia applicata come rampa invece che come taglio netto.
+        ///
+        /// Un taglio netto decide bianco o nero pixel per pixel, e su una diagonale il risultato e'
+        /// una scala. Ma i pixel grigi che l'originale ha lungo il bordo sono esattamente
+        /// l'informazione che dice **dove passa la linea** fra un pixel e il successivo: tenerli
+        /// costa niente e restituisce il bordo morbido che l'occhio si aspetta.
+        ///
+        /// La figura resta quella che traccia il vettoriale -- stessa soglia, stesso centro della
+        /// rampa -- quindi il JPEG continua a corrispondere all'SVG e all'EPS, come i marketplace
+        /// pretendono. Cambia solo il bordo, che smette di essere una scalinata.
+        /// </summary>
+        private const int LarghezzaRampa = 16;
+
+        private static void SogliaMorbida(Image<Rgb24> img, int soglia, bool invertito)
+        {
+            var lo = Math.Max(0, soglia - LarghezzaRampa);
+            var hi = Math.Min(255, soglia + LarghezzaRampa);
+            var ampiezza = Math.Max(1, hi - lo);
+
+            img.ProcessPixelRows(righe =>
+            {
+                for (var y = 0; y < righe.Height; y++)
+                {
+                    var riga = righe.GetRowSpan(y);
+                    for (var x = 0; x < riga.Length; x++)
+                    {
+                        var p = riga[x];
+                        var luminanza = 0.299 * p.R + 0.587 * p.G + 0.114 * p.B;
+                        var v = (luminanza - lo) / ampiezza;
+                        if (v < 0) v = 0;
+                        else if (v > 1) v = 1;
+                        if (invertito) v = 1 - v;
+                        var b = (byte)Math.Round(v * 255);
+                        riga[x] = new Rgb24(b, b, b);
+                    }
+                }
+            });
         }
 
         private static void Downscale(Image<Rgb24> img, int maxEdge)

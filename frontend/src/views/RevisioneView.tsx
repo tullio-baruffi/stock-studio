@@ -628,7 +628,18 @@ export default function RevisioneView() {
     return [{ id: corrente.id, fileName: corrente.fileName, kind: "JPG", carrier: true }];
   }, [corrente]);
 
-  const scelta = consegne.find((d) => d.id === consegna) ?? consegne.find((d) => d.carrier) ?? consegne[0];
+  /**
+   * Quale consegna si guarda per prima.
+   *
+   * Il portatore è il JPEG, ma quando l'immagine ha un SVG è quello a dover comparire: il JPEG di
+   * un vettoriale è solo un suo surrogato raster, e giudicare il tracciato da lì vuol dire vedere
+   * una scala di pixel dove il vettoriale ha una curva -- e dare la colpa al tracciato.
+   * Il prodotto che si vende è la curva: si guarda quella.
+   */
+  const scelta = consegne.find((d) => d.id === consegna)
+              ?? consegne.find((d) => d.kind.toUpperCase() === "SVG")
+              ?? consegne.find((d) => d.carrier)
+              ?? consegne[0];
   return (
     <div className="cernita">
       <AvvisoSessioneSharePoint />
