@@ -98,6 +98,9 @@ namespace MJ.Classifier
                 var splittedUrl = data.ServerRelativeUrl.Split("/");
                 var fileName = splittedUrl.LastOrDefault();
                 var folderName = splittedUrl.Reverse().Skip(1).FirstOrDefault();
+                // Il percorso intero, non il solo nome: ogni immagine vive nella sua sottocartella,
+                // e con il solo nome la riscrittura su SharePoint finiva contro la radice del sito.
+                var folderUrl = data.ServerRelativeUrl.Substring(0, data.ServerRelativeUrl.LastIndexOf('/'));
                 log.LogInformation($"HTTP trigger function processing file name: {fileName}");
                 log.LogInformation($"HTTP trigger function processing folder name: {folderName}");
 
@@ -125,7 +128,7 @@ namespace MJ.Classifier
                     message = summary;
 
                     log.LogInformation($"File {data.ServerRelativeUrl} updating file to SharePoint");
-                    SharePointHelper.UploadFileToSharePoint(_sharePointSettings, fileStreamWithExifMetadata, fileName, folderName, context.FunctionDirectory, log);
+                    SharePointHelper.UploadFileToSharePoint(_sharePointSettings, fileStreamWithExifMetadata, fileName, folderUrl, context.FunctionDirectory, log);
                     log.LogInformation($"File {data.ServerRelativeUrl} successfully uploaded file to SharePoint");
 
                     statusCode = 200;

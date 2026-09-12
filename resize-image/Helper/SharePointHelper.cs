@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Microsoft.Extensions.Logging;
 using MJ.Classifier.Models;
@@ -192,9 +193,23 @@ namespace MJ.Classifier.Helpers
             clientContext.ExecuteQuery();
             log.LogInformation("Web context loaded");
 
-            web.EnsureFolderPath(folderUrl);
+            // Le due chiamate qui sotto vogliono forme diverse dello stesso percorso: EnsureFolderPath
+            // lo vuole relativo al web, GetFolderByServerRelativeUrl lo vuole assoluto rispetto al
+            // server. Passare la stessa stringa a entrambe ha funzionato finche' i file stavano nella
+            // radice della libreria, perche' li' il nome della cartella coincideva con il suo percorso.
+            // Da quando ogni immagine ha la sua sottocartella, il chiamante passava il solo nome e
+            // EnsureFolderPath tentava di crearlo nella radice del sito, dove l'identita' applicativa
+            // non puo' scrivere: "Accesso negato" a caricamento sui marketplace gia' avvenuto.
+            var webRoot = web.ServerRelativeUrl.TrimEnd('/');
+            var serverRelativeFolder = folderUrl.StartsWith(webRoot + "/", StringComparison.OrdinalIgnoreCase)
+                ? folderUrl.TrimEnd('/')
+                : $"{webRoot}/{folderUrl.Trim('/')}";
+            var webRelativeFolder = serverRelativeFolder.Substring(webRoot.Length).Trim('/');
+            log.LogInformation($"Folder: web-relative '{webRelativeFolder}' - server-relative '{serverRelativeFolder}'");
 
-            var folder = web.GetFolderByServerRelativeUrl(folderUrl);
+            web.EnsureFolderPath(webRelativeFolder);
+
+            var folder = web.GetFolderByServerRelativeUrl(serverRelativeFolder);
             clientContext.Load(folder);
             clientContext.ExecuteQuery();
             log.LogInformation("List folder context loaded");
