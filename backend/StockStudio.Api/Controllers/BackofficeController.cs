@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using StockStudio.Api.Domain;
 using StockStudio.Api.Services;
+using StockStudio.Shared.Vettoriale;
 using StockStudio.Api.Services.Feedback;
 using StockStudio.Api.Services.Integration;
 using StockStudio.Api.Services.Scoring;
@@ -1082,6 +1083,106 @@ public class BackofficeController : ControllerBase
     /// risultati di ricerca -- in cambio di niente, perché il vettorizzatore lo ricava dallo stesso
     /// originale che ha appena letto. Si riscrivono solo i vettoriali, che sono ciò che cambia.
     /// </summary>
+    /// <summary>
+    /// Che taratura chiede **questa** immagine, guardandola.
+    ///
+    /// ## Perché serve
+    /// I nove numeri del tracciato si possono scegliere a mano, ma per sceglierli bisogna sapere
+    /// che cosa guardare, e chi carica cinquanta disegni al giorno non ha motivo di impararlo. Qui
+    /// li sceglie il sistema misurando il disegno -- quanto è fatto di tinte piatte, quanto sono
+    /// spessi i tratti, quante tinte distingue -- e riferisce anche **perché**, così la proposta
+    /// si può discutere invece di doverla prendere per buona.
+    ///
+    /// Si misura sull'originale conservato quando c'è: è l'unica copia mai compressa, e misurare
+    /// il JPEG di consegna vorrebbe dire misurare anche gli aloni della compressione.
+    /// </summary>
+    [HttpGet("items/{id:int}/tracciato-consigliato")]
+    public async Task<IActionResult> TracciatoConsigliato(int id, [FromQuery] string library,
+                                                          CancellationToken ct)
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        try
+        {
+            var carrier = _sp.GetItem(library, id);
+            if (!Punteggiatore.EImmagineRaster(carrier.FileName))
+                return Ok(new { ok = false, error = "Non è un'immagine: non c'è niente da misurare." });
+
+            var conservato = await _handoff.OriginaleAsync(CartellaDi(carrier.ServerRelativeUrl), ct);
+            byte[] contenuto;
+            if (conservato != null)
+            {
+                using var memoria = new MemoryStream();
+                await conservato.Value.Contenuto.CopyToAsync(memoria, ct);
+                await conservato.Value.Contenuto.DisposeAsync();
+                contenuto = memoria.ToArray();
+            }
+            else
+            {
+                contenuto = _sp.DownloadFile(carrier.ServerRelativeUrl);
+            }
+
+            using var img = CaricaImmagine.SuBianco(contenuto);
+            var rgb = new byte[img.Width * img.Height * 3];
+            img.CopyPixelDataTo(rgb);
+
+            var misure = Disegno.Guarda(rgb, img.Width, img.Height, null);
+            var consigliati = Disegno.Consiglia(misure, _vectorize.Value.Tracciato);
+
+            return Ok(new
+            {
+                ok = true,
+                sorgente = conservato != null ? "originale" : "jpeg",
+                misure = new
+                {
+                    genere = misure.Genere,
+                    scarto = Math.Round(misure.Scarto, 1),
+                    tinte = misure.Tinte,
+                    spessore = Math.Round(misure.Spessore, 1),
+                    inchiostro = Math.Round(misure.Inchiostro * 100, 1),
+                    larghezza = img.Width,
+                    altezza = img.Height,
+                },
+                perche = Perche(misure),
+                valori = new
+                {
+                    colori = consigliati.NumeroColori,
+                    unione = consigliati.SogliaUnione,
+                    rumore = consigliati.RiduzioneRumore,
+                    lisciatura = consigliati.RaggioLisciatura,
+                    granelli = consigliati.Granelli,
+                    morbidezza = consigliati.Morbidezza,
+                    giri = consigliati.GiriLisciatura,
+                    tolleranza = consigliati.Tolleranza,
+                    angolo = consigliati.AngoloSpigolo,
+                },
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Misura del disegno non riuscita per {Library}/{Id}", library, id);
+            return Ok(new { ok = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>Perché la proposta è quella: una riga per ogni numero che il disegno ha deciso.</summary>
+    private static string[] Perche(Disegno.Misure m)
+    {
+        var righe = new List<string>();
+        righe.Add(m.ATintePiatte
+            ? $"I colori cambiano di scatto (scarto {m.Scarto:0.0}): è un disegno a tinte piatte, " +
+              "quindi niente lisciatura — arrotonderebbe gli spigoli e stringerebbe i vuoti."
+            : $"I colori passano per valori intermedi (scarto {m.Scarto:0.0}): è un'illustrazione " +
+              "sfumata, e una lisciatura leggera toglie la scalinata senza toccare la forma.");
+        righe.Add($"I tratti sono spessi circa {m.Spessore:0} pixel: i granelli si tolgono sotto un " +
+                  "quarto di quell'area, e la riduzione del rumore resta a un ottavo di quello " +
+                  "spessore per non mangiarli.");
+        righe.Add($"Si distinguono {m.Tinte} tinte: se ne chiedono la metà in più, perché chiederne " +
+                  "molte di più non ne inventa e costa tempo.");
+        return righe.ToArray();
+    }
+
     [HttpPost("items/{id:int}/rivettorializza")]
     public async Task<IActionResult> Rivettorializza(int id, [FromQuery] string library,
                                                      [FromBody] ParametriTracciatoModulo? tracciato,
@@ -1450,3 +1551,4 @@ public class BackofficeController : ControllerBase
         return quando - riferimento > TimeSpan.FromMinutes(2);
     }
 }
+

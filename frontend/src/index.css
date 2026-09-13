@@ -537,6 +537,16 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 /* La finestra del ritracciamento mostra tutti i campi, e quella normale è troppo stretta. */
 .modal.tracciato-modale { max-width: 720px; }
 
+/* La taratura proposta misurando il disegno: si legge prima dei cursori, e li spiega. */
+.consigliato {
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 12px 14px; margin: 0 0 16px;
+  background: var(--panel2);
+}
+.consigliato-titolo { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.consigliato ul { margin: 0 0 10px; padding-left: 18px; color: var(--muted); line-height: 1.6; font-size: 13px; }
+.consigliato li { margin: 3px 0; }
+
 /*
   La guida ai parametri. Le strisce d'esempio sono larghe e vanno lette da sinistra a destra:
   su schermo stretto si scorrono invece di rimpicciolirsi, perché ridotte non direbbero più niente.

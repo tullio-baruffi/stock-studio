@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type BackofficeItem, type Deliverable, type ParametriTracciato } from "../api";
+import { api, type BackofficeItem, type Deliverable, type ParametriTracciato, type TracciatoConsigliato } from "../api";
 import AuthImage from "../components/AuthImage";
 import { AvvisoSessioneSharePoint } from "../components/AccessoSharePoint";
 import { Attesa, Rotella, Segnaposto } from "../components/Attesa";
@@ -120,6 +120,16 @@ export default function RevisioneView() {
    */
   const [finestraTracciato, setFinestraTracciato] = useState(false);
   const [tracciatoScelto, setTracciatoScelto] = useState<ParametriTracciato>({});
+  /**
+   * Che taratura chiede l'immagine aperta, misurata guardandola.
+   *
+   * Si chiede all'apertura della finestra e non prima: e' una lettura dell'originale conservato,
+   * che costa una discesa da blob e una passata sui pixel, e farla per ogni immagine sfogliata
+   * vorrebbe dire pagarla anche per le novantanove che non si ritracciano.
+   */
+  const [consigliato, setConsigliato] = useState<TracciatoConsigliato | "attesa" | null>(null);
+  /** Se i valori nel pannello sono quelli proposti: evita di riproporli quando gia' ci sono. */
+  const [consigliatiApplicati, setConsigliatiApplicati] = useState(false);
   const [nota, setNota] = useState("");
 
   const [fascia, setFascia] = useState<Fascia>("tutte");
@@ -520,8 +530,41 @@ export default function RevisioneView() {
   };
 
   /**
-   * Ritraccia SVG ed EPS di un'immagine già in libreria.
+   * Apre la finestra del ritracciamento e, insieme, **misura il disegno**.
    *
+   * La misura serve a proporre una taratura invece di applicarne una uguale per tutti: guarda
+   * quanto l'immagine e' fatta di tinte piatte, quanto sono spessi i tratti, quante tinte
+   * distingue, e da li' ricava i numeri. Si chiede qui e non prima perche' costa una discesa
+   * dell'originale da blob: farla a ogni immagine sfogliata vorrebbe dire pagarla anche per le
+   * novantanove che non si ritracciano.
+   */
+  const apriFinestraTracciato = useCallback(async () => {
+    if (!corrente) return;
+    setFinestraTracciato(true);
+    setConsigliato("attesa");
+    setConsigliatiApplicati(false);
+    try {
+      const c = await api.tracciatoConsigliato(stadio, corrente.id);
+      setConsigliato(c);
+      // I valori proposti si mettono subito nel pannello: chi apre la finestra vuole il risultato
+      // migliore, non un modulo da compilare. Restano tutti spostabili.
+      if (c.ok && c.valori) {
+        setTracciatoScelto({ ...c.valori });
+        setConsigliatiApplicati(true);
+      }
+    } catch (e) {
+      setConsigliato({ ok: false, error: (e as Error).message });
+    }
+  }, [corrente, stadio]);
+
+  const applicaConsigliati = useCallback(() => {
+    if (!consigliato || consigliato === "attesa" || !consigliato.valori) return;
+    setTracciatoScelto({ ...consigliato.valori });
+    setConsigliatiApplicati(true);
+  }, [consigliato]);
+
+  /**
+   * Ritraccia SVG ed EPS di un'immagine già in libreria.
    * Non è la rigenerazione dei metadati: quella riscrive le parole chiamando il modello a
    * pagamento, questa riscrive il disegno e non costa niente in chiamate. Serve perché il
    * vettorizzatore migliora nel tempo mentre le immagini già lavorate restano com'erano.
@@ -1257,7 +1300,7 @@ export default function RevisioneView() {
                 : <>↻ Rigenera <span className="cn-cost">(a pagamento)</span></>}
             </button>
             {conVettoriali(corrente) && (
-              <button className="btn small" onClick={() => setFinestraTracciato(true)} disabled={occupato}
+              <button className="btn small" onClick={() => void apriFinestraTracciato()} disabled={occupato}
                       title="Rifà SVG ed EPS dal JPG: si scelgono prima i parametri; metadati e JPG restano come sono">
                 {azione === "ritraccia" ? <><Rotella /> Ritraccio…</> : "⟳ Ritraccia vettoriali…"}
               </button>
@@ -1290,9 +1333,38 @@ export default function RevisioneView() {
             <p className="muted small">
               SVG ed EPS vengono rifatti dall'originale conservato, o dal JPG se l'originale non c'è
               più. I metadati e il JPG non si toccano, e SharePoint conserva le versioni precedenti
-              dei file riscritti. Se il disegno precedente aveva contorni ondulati o troppi
-              frammenti, è qui che si corregge.
+              dei file riscritti.
             </p>
+
+            {consigliato === "attesa" && (
+              <p className="muted small"><Rotella /> Guardo il disegno…</p>
+            )}
+
+            {consigliato && consigliato !== "attesa" && consigliato.ok && consigliato.misure && (
+              <div className="consigliato">
+                <div className="consigliato-titolo">
+                  <strong>{consigliato.misure.genere}</strong>
+                  <span className="muted small">
+                    {consigliato.misure.tinte} tinte · tratti da {consigliato.misure.spessore} px ·
+                    misurato {consigliato.sorgente === "originale" ? "sull'originale" : "sul JPG di consegna"}
+                  </span>
+                </div>
+                <ul>{(consigliato.perche ?? []).map((r) => <li key={r}>{r}</li>)}</ul>
+                {!consigliatiApplicati && (
+                  <button className="btn small" onClick={applicaConsigliati}>
+                    Usa i valori consigliati
+                  </button>
+                )}
+              </div>
+            )}
+
+            {consigliato && consigliato !== "attesa" && !consigliato.ok && (
+              <p className="muted small">
+                Non sono riuscito a misurare il disegno ({consigliato.error}): restano i valori
+                predefiniti.
+              </p>
+            )}
+
             <PannelloTracciato
               valore={tracciatoScelto}
               onChange={setTracciatoScelto}
@@ -1393,3 +1465,4 @@ function AnteprimaConsegna(
 
   return <AuthImage src={indirizzo} alt={consegna.fileName} />;
 }
+

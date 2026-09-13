@@ -104,6 +104,26 @@ export type ConfigTracciato = {
   campi: CampoTracciato[];
 };
 
+/** Che taratura chiede una singola immagine, misurata guardandola. */
+export type TracciatoConsigliato = {
+  ok: boolean;
+  error?: string;
+  /** "originale" quando si è misurata la copia mai compressa, "jpeg" quando non c'era più. */
+  sorgente?: "originale" | "jpeg";
+  misure?: {
+    genere: string;
+    scarto: number;
+    tinte: number;
+    spessore: number;
+    inchiostro: number;
+    larghezza: number;
+    altezza: number;
+  };
+  /** Una riga per ogni numero che il disegno ha deciso, in italiano. */
+  perche?: string[];
+  valori?: Required<ParametriTracciato>;
+};
+
 /** Rules the review process distilled from the author's corrections. */
 export type Guidance = {
   version: number;
@@ -990,6 +1010,11 @@ export const api = {
   /** I predefiniti del tracciato a colori e i campi da mostrare per sceglierli. */
   configTracciato(): Promise<ConfigTracciato> {
     return f("/api/configuration/tracciato").then(jsonOrThrow);
+  },
+  /** Che taratura chiede questa immagine, misurata guardandola. */
+  tracciatoConsigliato(library: string, id: number): Promise<TracciatoConsigliato> {
+    return f(`/api/backoffice/items/${id}/tracciato-consigliato?library=${encodeURIComponent(library)}`)
+      .then(jsonOrThrow);
   },
   trends(horizonDays = 150, style = "silhouette"): Promise<Trends> {
     return f(`/api/trends?horizonDays=${horizonDays}&style=${encodeURIComponent(style)}`).then(jsonOrThrow);

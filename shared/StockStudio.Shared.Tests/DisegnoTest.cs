@@ -120,4 +120,88 @@ public class DisegnoTest
         Assert.Equal(0, Disegno.Scarto(new byte[0], 0, 0, new bool[0]));
         Assert.Equal(0, Disegno.Scarto(null!, 10, 10, new bool[0]));
     }
+
+    // ---- La taratura consigliata --------------------------------------------------------------
+
+    [Fact]
+    public void SulleTintePiatteIlConsiglioToglieLaLisciatura()
+    {
+        const int w = 90, h = 90;
+        var c = Disegno.Consiglia(TintePiatte(w, h), w, h, new bool[0]);
+
+        Assert.Equal(0, c.RaggioLisciatura);
+        // La scelta e' stata fatta guardando: non deve poi essere riconsiderata a valle.
+        Assert.False(c.LisciaturaAutomatica);
+    }
+
+    [Fact]
+    public void SulloSfumatoIlConsiglioLasciaLaLisciatura()
+    {
+        const int w = 200, h = 60;
+        Assert.Equal(1, Disegno.Consiglia(Sfumato(w, h), w, h, new bool[0]).RaggioLisciatura);
+    }
+
+    /// <summary>
+    /// Su un'illustrazione sfumata il consiglio non tocca granelli e rumore: li' le macchioline
+    /// sono frammenti d'ombra da togliere, e abbassare le soglie peggiorerebbe il disegno --
+    /// misurato, i contorni della balena salivano da 404 a 590.
+    /// </summary>
+    [Fact]
+    public void SulloSfumatoIlConsiglioNonToccaGranelliERumore()
+    {
+        const int w = 200, h = 60;
+        var p = ParametriTracciato.Predefiniti;
+        var c = Disegno.Consiglia(Sfumato(w, h), w, h, new bool[0], p);
+
+        Assert.Equal(p.Granelli, c.Granelli);
+        Assert.Equal(p.RiduzioneRumore, c.RiduzioneRumore);
+    }
+
+    /// <summary>
+    /// E in nessun caso il consiglio **alza** quel che toglie: puo' solo essere piu' prudente del
+    /// predefinito, mai piu' aggressivo. E' la garanzia che accettarlo non possa far sparire
+    /// dettagli che la taratura di serie avrebbe tenuto.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void IlConsiglioNonEMaiPiuAggressivoDelPredefinito(bool piatte)
+    {
+        const int w = 200, h = 90;
+        var img = piatte ? TintePiatte(w, h) : Sfumato(w, h);
+        var p = ParametriTracciato.Predefiniti;
+        var c = Disegno.Consiglia(img, w, h, new bool[0], p);
+
+        Assert.True(c.Granelli <= p.Granelli, $"granelli {c.Granelli} > predefinito {p.Granelli}");
+        Assert.True(c.RiduzioneRumore <= p.RiduzioneRumore,
+            $"rumore {c.RiduzioneRumore} > predefinito {p.RiduzioneRumore}");
+        Assert.True(c.RaggioLisciatura <= p.RaggioLisciatura);
+    }
+
+    /// <summary>
+    /// Il consiglio si esprime alla grandezza convenzionale, come tutto il resto: se parlasse in
+    /// pixel veri, <see cref="ParametriTracciato.PerImmagine"/> riapplicherebbe la scala e i
+    /// numeri uscirebbero al quadrato della grandezza.
+    /// </summary>
+    [Fact]
+    public void IlConsiglioEAllaGrandezzaConvenzionale()
+    {
+        const int w = 200, h = 90;
+        var c = Disegno.Consiglia(TintePiatte(w, h), w, h, new bool[0]);
+        var effettivi = c.PerImmagine(w, h);
+
+        // Immagine molto piu' piccola del riferimento: i granelli effettivi devono scendere.
+        Assert.True(effettivi.Granelli <= c.Granelli,
+            $"effettivi {effettivi.Granelli} > dichiarati {c.Granelli} su un'immagine piccola");
+    }
+
+    [Fact]
+    public void UnaMisuraVuotaLasciaILPredefinito()
+    {
+        var p = ParametriTracciato.Predefiniti;
+        var c = Disegno.Consiglia(new Disegno.Misure(), p);
+
+        Assert.Equal(p.Granelli, c.Granelli);
+        Assert.Equal(p.NumeroColori, c.NumeroColori);
+    }
 }
