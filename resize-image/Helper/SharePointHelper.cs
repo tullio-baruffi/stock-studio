@@ -209,18 +209,11 @@ namespace MJ.Classifier.Helpers
                     var url = senzaEstensione + estensione;
                     if (!url.StartsWith(web.ServerRelativeUrl)) url = $"{web.ServerRelativeUrl}{url}";
 
-                    var file = web.GetFileByServerRelativeUrl(url);
-                    clientContext.Load(file, f => f.Exists);
-                    try
+                    if (EsisteIlFile(clientContext, web, url, log))
                     {
-                        clientContext.ExecuteQuery();
-                        if (file.Exists)
-                        {
-                            log.LogInformation($"{Path.GetFileName(serverRelativeUrl)}: gruppo vettoriale (trovato {estensione})");
-                            return true;
-                        }
+                        log.LogInformation($"{Path.GetFileName(serverRelativeUrl)}: gruppo vettoriale (trovato {estensione})");
+                        return true;
                     }
-                    catch { /* non esiste: si prova l'estensione successiva */ }
                 }
             }
             catch (Exception ex)
@@ -233,6 +226,68 @@ namespace MJ.Classifier.Helpers
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Se un file esiste davvero, distinguendo "non c'e'" da "non si e' potuto sapere".
+        ///
+        /// ## Il difetto che questa distinzione chiude
+        /// Qui prima c'era un <c>catch</c> senza tipo, con scritto accanto "non esiste: si prova
+        /// l'estensione successiva". Quel commento dava per scontato che l'unico motivo per cui
+        /// SharePoint possa rifiutare una richiesta sia l'assenza del file. Non e' cosi': risponde
+        /// con un errore anche quando limita le richieste, e con quattro consegne che partono
+        /// insieme succede. Ogni errore diventava allora un "non c'e'", tutte e tre le estensioni
+        /// fallivano in fila, e il JPEG di un gruppo vettoriale veniva scambiato per una fotografia
+        /// e mandato **anche** ad Adobe Stock, dove il vettoriale era gia' arrivato per conto suo.
+        ///
+        /// Il ripiego prudente scritto nel chiamante -- "non sapere e' diverso da sapere di no" --
+        /// non veniva mai raggiunto, perche' l'errore era gia' stato inghiottito qui dentro.
+        ///
+        /// ## Cosa fa adesso
+        /// Solo un "file non trovato" vale come assenza. Qualunque altro errore si ritenta un paio
+        /// di volte -- le limitazioni sono quasi sempre passeggere -- e se insiste si lascia salire,
+        /// perche' sia il chiamante a decidere: e lui sceglie la strada prudente.
+        /// </summary>
+        private static bool EsisteIlFile(ClientContext clientContext, Web web, string url, ILogger log)
+        {
+            const int Tentativi = 3;
+
+            for (var giro = 1; ; giro++)
+            {
+                try
+                {
+                    var file = web.GetFileByServerRelativeUrl(url);
+                    clientContext.Load(file, f => f.Exists);
+                    clientContext.ExecuteQuery();
+                    return file.Exists;
+                }
+                catch (ServerException ex) when (NonTrovato(ex))
+                {
+                    return false;
+                }
+                catch (Exception ex) when (giro < Tentativi)
+                {
+                    log.LogWarning($"{Path.GetFileName(url)}: verifica non riuscita al tentativo {giro} di {Tentativi} ({ex.Message}), riprovo");
+                    System.Threading.Thread.Sleep(400 * giro);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Se l'errore di SharePoint dice "questo file non esiste" e non qualcos'altro.
+        ///
+        /// Il nome del tipo lato server e' il segnale affidabile; il testo del messaggio serve solo
+        /// come rete di sicurezza, perche' cambia con la lingua del tenant.
+        /// </summary>
+        private static bool NonTrovato(ServerException ex)
+        {
+            if (string.Equals(ex.ServerErrorTypeName, "System.IO.FileNotFoundException", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var messaggio = ex.Message ?? string.Empty;
+            return messaggio.IndexOf("does not exist", StringComparison.OrdinalIgnoreCase) >= 0
+                || messaggio.IndexOf("non esiste", StringComparison.OrdinalIgnoreCase) >= 0
+                || messaggio.IndexOf("File Not Found", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static (int ItemId, string ServerRelativeUrl) UploadFileToSharePointWithId(
