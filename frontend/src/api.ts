@@ -746,7 +746,7 @@ export const api = {
    * `thresholds` carries the tracing cut the author picked per picture, one entry per file in the
    * same order; "auto" leaves that picture to Otsu inside the Function.
    */
-  handoff(files: File[], mode: "vector" | "colore" | "raster" = "vector",
+  handoff(files: File[], mode: "auto" | "vector" | "colore" | "raster" = "auto",
           thresholds?: (number | null)[], tracciato?: ParametriTracciato): Promise<HandoffResponse> {
     const fd = new FormData();
     files.forEach((file) => fd.append("files", file, file.name));

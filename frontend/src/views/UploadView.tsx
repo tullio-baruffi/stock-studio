@@ -39,9 +39,19 @@ const IMAGE_TYPE = /image\/(jpe?g|png|webp|tiff?)/i;
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${++seq}`;
 
+/**
+ * Cosa fare del file caricato.
+ *
+ * «auto» non e' l'assenza di una scelta ma la scelta migliore: guarda l'immagine e decide fra
+ * colori e silhouette. Le altre due vettoriali sono **imposizioni**, e servono solo quando si
+ * vuole qualcosa di diverso da quel che l'immagine e'.
+ */
+type Modalita = "auto" | "vector" | "colore" | "raster";
+
 /** Il nome della modalità in italiano, scritto in un posto solo perché compare in tre punti. */
-function nomeModalita(mode: "vector" | "colore" | "raster"): string {
-  return mode === "vector" ? "vettoriale in bianco e nero"
+function nomeModalita(mode: Modalita): string {
+  return mode === "auto" ? "automatica"
+    : mode === "vector" ? "vettoriale in bianco e nero"
     : mode === "colore" ? "vettoriale a colori"
     : "immagine";
 }
@@ -56,7 +66,7 @@ export default function UploadView({
   pipeline: PipelineStatus | null;
   onNavigate?: (tab: "backoffice" | "monitor") => void;
 }) {
-  const [mode, setMode] = useState<"vector" | "colore" | "raster">("vector");
+  const [mode, setMode] = useState<Modalita>("auto");
   /**
    * I numeri con cui tracciare a colori, per tutto il lotto.
    *
@@ -165,6 +175,10 @@ export default function UploadView({
     <>
       <div className="modebar">
         <span className="muted small">Cosa vuoi consegnare?</span>
+        <button className={`modebtn ${mode === "auto" ? "on" : ""}`} onClick={() => setMode("auto")}>
+          <strong>✦ Automatico</strong>
+          <span>guarda l'immagine e sceglie: colori o silhouette</span>
+        </button>
         <button className={`modebtn ${mode === "vector" ? "on" : ""}`} onClick={() => setMode("vector")}>
           <strong>◆ Vettoriale B/N</strong>
           <span>silhouette: una soglia, un tracciato</span>
@@ -178,6 +192,14 @@ export default function UploadView({
           <span>foto e grafiche già pronte, nessun tracciato</span>
         </button>
       </div>
+
+      {mode === "vector" && (
+        <div className="notice" role="status">
+          <strong>La silhouette butta via il colore.</strong> Un disegno a contorni blu esce nero
+          pieno: è la lavorazione giusta solo per chi vuole davvero una sagoma a una tinta. Se
+          l'immagine ha dei colori, <em>Automatico</em> se ne accorge da solo.
+        </div>
+      )}
 
       {storageOff && (
         <div className="notice err" role="alert">
@@ -229,7 +251,9 @@ export default function UploadView({
             <strong>Trascina qui le immagini</strong> oppure clicca per selezionare
           </div>
           <div className="hint">
-            {mode === "vector"
+            {mode === "auto"
+              ? "Modalità automatica · si guarda ogni immagine e si sceglie: a colori se colori ne ha, silhouette se non ne ha"
+              : mode === "vector"
               ? "Modalità vettoriale in bianco e nero · silhouette in SVG, EPS e JPG"
               : mode === "colore"
               ? `Modalità vettoriale a colori · ${Object.keys(tracciato).length === 0
@@ -461,3 +485,4 @@ function RasterThumb({ file }: { file: File }) {
 
   return url ? <img src={url} alt={`Anteprima: ${file.name}`} /> : <div className="noimg">…</div>;
 }
+

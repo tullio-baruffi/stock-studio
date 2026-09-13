@@ -25,7 +25,14 @@ export type DeliveredFile = {
 export type DeliveredBatch = {
   id: string;
   at: string;
-  mode: "vector" | "colore" | "raster";
+  /**
+   * Con quale modalità è stato consegnato il lotto.
+   *
+   * «auto» dice che la scelta fra colori e silhouette l'ha fatta il motore guardando ogni
+   * immagine: la ricevuta non può dire quale delle due sia uscita, perché può essere diversa da
+   * un file all'altro dello stesso lotto. Quella risposta sta nel Backoffice, sul singolo file.
+   */
+  mode: "auto" | "vector" | "colore" | "raster";
   accepted: number;
   rejected: number;
   files: DeliveredFile[];

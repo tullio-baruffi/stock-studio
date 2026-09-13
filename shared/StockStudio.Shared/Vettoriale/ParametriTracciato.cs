@@ -69,8 +69,37 @@ namespace StockStudio.Shared.Vettoriale
         ///
         /// Non si scala con l'immagine, ed e' l'unico raggio che non lo fa: la scalinata da
         /// togliere e' alta un pixel del reticolo, sempre.
+        ///
+        /// **Uno, non due.** Era due per una taratura fatta su una sola illustrazione, ombreggiata
+        /// e senza spigoli. Su un disegno a tinte piatte due si vede: misurato al massimo
+        /// ingrandimento su un line art, la V fra due ciocche si arrotonda e il vuoto bianco fra
+        /// loro si stringe. Uno toglie la scalinata senza toccare la forma; e dove il disegno e'
+        /// fatto di tinte piatte <see cref="LisciaturaAutomatica"/> scende anche sotto.
         /// </summary>
-        public int RaggioLisciatura { get; set; } = 2;
+        public int RaggioLisciatura { get; set; } = 1;
+
+        /// <summary>
+        /// Se la lisciatura debba adattarsi al disegno invece di valere quella scritta sopra.
+        ///
+        /// ## Perche' proprio questa
+        /// Perche' e' l'unico parametro che fa un danno **visibile e opposto** sui due generi che
+        /// passano di qui. Su un'illustrazione ombreggiata lisciare assomiglia a quel che
+        /// l'originale gia' fa, e toglie la scalinata del reticolo; su un line art l'originale non
+        /// liscia niente -- i bordi sono netti per scelta del disegnatore -- e ogni sfocatura si
+        /// legge come un difetto: punte smussate, vuoti che si stringono.
+        ///
+        /// ## Come si riconosce il caso
+        /// Non dallo spessore dei tratti, che sui due generi puo' essere identico, ma da **quanto
+        /// il disegno e' fatto di tinte piatte**: si guarda di quanto ogni pixel si scosta dalla
+        /// tinta a cui e' stato assegnato. Su tinte piatte quello scarto e' quasi zero, su una
+        /// sfumatura no. Misurato sulle immagini vere del portfolio:
+        ///     line art (2 tinte):        scarto 2,5 - 3,2
+        ///     illustrazioni (7-15 tinte): scarto 4,2 - 4,3
+        ///
+        /// Chi muove il cursore della lisciatura spegne questa scelta: l'ha guardata lui
+        /// l'immagine, e vince chi guarda.
+        /// </summary>
+        public bool LisciaturaAutomatica { get; set; } = true;
 
         /// <summary>
         /// Sotto quanti pixel una macchia e' rumore invece che un dettaglio. Zero non ne toglie
@@ -202,6 +231,7 @@ namespace StockStudio.Shared.Vettoriale
                 SogliaUnione = SogliaUnione < 0 ? 0 : SogliaUnione > 20000 ? 20000 : SogliaUnione,
                 RiduzioneRumore = Limita(RiduzioneRumore, 0, 8),
                 RaggioLisciatura = Limita(RaggioLisciatura, 0, 6),
+                LisciaturaAutomatica = LisciaturaAutomatica,
                 Granelli = Limita(Granelli, 0, 20000),
                 Morbidezza = Limita(Morbidezza, 0, 12),
                 GiriLisciatura = Limita(GiriLisciatura, 0, 60),

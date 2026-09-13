@@ -211,14 +211,16 @@ namespace MJ.Classifier
         /// Null non e' un'assenza di risposta ma una risposta precisa -- "guardala tu" -- ed e' il
         /// caso normale: se un'immagine ha colori si vede guardandola, e chiederlo ogni volta
         /// sarebbe far fare a mano un lavoro che la macchina fa meglio.
+        ///
+        /// La risposta la da' <see cref="Modalita.ColoreImposto"/>, in un posto solo: qui c'era
+        /// una seconda lettura delle stesse stringhe, e le due erano gia' divergenti -- questa
+        /// rispondeva "guardala tu" a un messaggio vuoto mentre la normalizzazione a monte quel
+        /// vuoto l'aveva gia' trasformato in "bianco e nero". Vinceva la prima, e ogni caricamento
+        /// senza preferenza usciva in silhouette.
         /// </summary>
         private static bool? ColoreRichiesto(string mode)
         {
-            if (string.IsNullOrWhiteSpace(mode)) return null;
-            if (string.Equals(mode, "colore", StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(mode, "color", StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(mode, "vector", StringComparison.OrdinalIgnoreCase)) return false;
-            return null;
+            return Modalita.ColoreImposto(mode);
         }
 
         /// <summary>
@@ -356,14 +358,16 @@ namespace MJ.Classifier
             // consegnato a tremila pixel e a seimila.
             var p = parametri.PerImmagine(src.Width, src.Height);
 
-            // Il rumore si toglie **prima** di decidere quali sono le tinte: dopo, l'ondeggiamento
-            // del JPEG e' gia' diventato confine (vedi Rumore).
+            // Il rumore si toglie **prima** di decidere quali sono le tinte (vedi Rumore); ma di
+            // che pasta sia il disegno si guarda prima ancora, sui pixel come sono arrivati,
+            // perche' la mediana appiattisce e falserebbe la misura (vedi Disegno).
+            var lisciatura = Disegno.LisciaturaPer(rgb, src.Width, src.Height, opachi, p);
             rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
 
             var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
             // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte
             // un pixel, e ricalcarle darebbe contorni ondulati.
-            Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, p.RaggioLisciatura);
+            Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, lisciatura);
             // Poi si toglie il pulviscolo. Va **dopo** la lisciatura, che nel raddrizzare i bordi
             // puo' staccare qualche granello nuovo.
             Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height, p.Granelli);
@@ -388,7 +392,8 @@ namespace MJ.Classifier
             }
 
             log.LogInformation($"Tracciato a colori: {tavolozza.Colori.Length} tinte, " +
-                               $"{contorni.Archi.Count} confini");
+                               $"{contorni.Archi.Count} confini, lisciatura {lisciatura}" +
+                               (p.LisciaturaAutomatica ? " (scelta guardando il disegno)" : " (imposta)"));
         }
 
         /// <summary>

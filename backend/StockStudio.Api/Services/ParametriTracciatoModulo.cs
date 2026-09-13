@@ -77,6 +77,9 @@ public class ParametriTracciatoModulo
             SogliaUnione = Unione ?? p.SogliaUnione,
             RiduzioneRumore = Rumore ?? p.RiduzioneRumore,
             RaggioLisciatura = Lisciatura ?? p.RaggioLisciatura,
+            // Muovere il cursore della lisciatura spegne la scelta automatica: chi l'ha mosso ha
+            // guardato l'immagine, e vince chi guarda.
+            LisciaturaAutomatica = !Lisciatura.HasValue && p.LisciaturaAutomatica,
             Granelli = Granelli ?? p.Granelli,
             Morbidezza = Morbidezza ?? p.Morbidezza,
             GiriLisciatura = Giri ?? p.GiriLisciatura,

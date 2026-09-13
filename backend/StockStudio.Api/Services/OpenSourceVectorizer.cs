@@ -127,12 +127,17 @@ public partial class OpenSourceVectorizer : IVectorizer
         // Il rumore si toglie **prima** di decidere quali sono le tinte: dopo, l'ondeggiamento del
         // JPEG e' gia' diventato confine, e nessuna lisciatura a valle lo puo' piu' distinguere dal
         // disegno. Vedi Rumore.
+        //
+        // Di che pasta sia il disegno si guarda pero' **prima della pulizia**: la mediana
+        // appiattisce, e misurare dopo farebbe passare per tinte piatte anche un'illustrazione
+        // ombreggiata (vedi Disegno).
+        var lisciatura = Disegno.LisciaturaPer(rgb, src.Width, src.Height, opachi, p);
         rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
 
         var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
         // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte un
         // pixel, e ricalcarle darebbe contorni ondulati.
-        Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, p.RaggioLisciatura);
+        Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, lisciatura);
         // Poi si toglie il pulviscolo. Va **dopo** la lisciatura, che nel raddrizzare i bordi puo'
         // staccare qualche granello nuovo -- misurato: invertendo l'ordine ne restavano il triplo.
         Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height, p.Granelli);
@@ -155,9 +160,11 @@ public partial class OpenSourceVectorizer : IVectorizer
         Riduci(jpg);
         await jpg.SaveAsJpegAsync(jpgPath, new JpegEncoder { Quality = _opt.JpegQuality }, ct);
 
-        _log.LogInformation("Tracciato a colori: {Colori} tinte, {Archi} confini, {Anelli} contorni",
+        _log.LogInformation("Tracciato a colori: {Colori} tinte, {Archi} confini, {Anelli} contorni, " +
+                            "lisciatura {Lisciatura}{Come}",
                             tavolozza.Colori.Length, contorni.Archi.Count,
-                            contorni.Zone.Sum(z => z.Count));
+                            contorni.Zone.Sum(z => z.Count), lisciatura,
+                            p.LisciaturaAutomatica ? " (scelta guardando il disegno)" : " (imposta)");
     }
 
     /// <summary>Riporta il JPEG entro il lato lungo previsto, se lo supera.</summary>
