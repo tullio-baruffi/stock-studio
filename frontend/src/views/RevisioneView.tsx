@@ -1346,10 +1346,39 @@ export default function RevisioneView() {
                   <strong>{consigliato.misure.genere}</strong>
                   <span className="muted small">
                     {consigliato.misure.tinte} tinte · tratti da {consigliato.misure.spessore} px ·
+                    {" "}{consigliato.misure.larghezza}×{consigliato.misure.altezza} ·
                     misurato {consigliato.sorgente === "originale" ? "sull'originale" : "sul JPG di consegna"}
                   </span>
                 </div>
                 <ul>{(consigliato.perche ?? []).map((r) => <li key={r}>{r}</li>)}</ul>
+
+                {(consigliato.differenze ?? []).length > 0 ? (
+                  <table className="consigliato-diff">
+                    <thead>
+                      <tr><th>Cosa cambia</th><th>di serie</th><th>proposto</th></tr>
+                    </thead>
+                    <tbody>
+                      {consigliato.differenze!.map((d) => (
+                        <tr key={d.campo}>
+                          <td>{d.etichetta}</td>
+                          <td className="da">{d.daSerie}{d.unita}</td>
+                          <td className="a">{d.proposto}{d.unita}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="muted small">
+                    Per questo disegno la taratura di serie va già bene: non c'è niente da cambiare.
+                  </p>
+                )}
+
+                <p className="muted small">
+                  I cursori qui sotto sono riferiti a un lato lungo di 3.000 px; su questa immagine
+                  valgono {consigliato.effettivi?.granelli} px² di granelli
+                  e {consigliato.effettivi?.tolleranza} px di fedeltà.
+                </p>
+
                 {!consigliatiApplicati && (
                   <button className="btn small" onClick={applicaConsigliati}>
                     Usa i valori consigliati
@@ -1465,4 +1494,5 @@ function AnteprimaConsegna(
 
   return <AuthImage src={indirizzo} alt={consegna.fileName} />;
 }
+
 

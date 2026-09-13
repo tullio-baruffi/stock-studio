@@ -53,7 +53,14 @@ public record RivettorializzaResult(
     /// caricato, "jpeg" quando quello non c'era più e si è dovuto ricalcare il JPEG di consegna.
     /// Chi guarda il risultato deve sapere da cosa è stato ottenuto.
     /// </summary>
-    string sorgente = "jpeg");
+    string sorgente = "jpeg",
+    /// <summary>
+    /// Con che taratura si è tracciato, detta in una riga.
+    ///
+    /// Senza questa, la scelta automatica è invisibile: il file cambia e nessuno sa perché. Dice
+    /// anche se i numeri li ha scelti il disegno o chi ha premuto il pulsante.
+    /// </summary>
+    string? taratura = null);
 
 public record ConsegnaRiscritta(string tipo, string fileName, int kbPrima, int kbDopo);
 
@@ -1128,7 +1135,34 @@ public class BackofficeController : ControllerBase
             img.CopyPixelDataTo(rgb);
 
             var misure = Disegno.Guarda(rgb, img.Width, img.Height, null);
-            var consigliati = Disegno.Consiglia(misure, _vectorize.Value.Tracciato);
+            var serie = _vectorize.Value.Tracciato.Convalidato();
+            var consigliati = Disegno.Consiglia(misure, serie);
+
+            // Due scale, e vanno riferite entrambe. I parametri si scrivono riferiti a una
+            // grandezza convenzionale, ma su **questa** immagine valgono un altro numero: dire solo
+            // il primo vuol dire dare a chi guarda un valore che non ritrova da nessuna parte.
+            var effettivi = consigliati.PerImmagine(img.Width, img.Height);
+            var serieEffettivi = serie.PerImmagine(img.Width, img.Height);
+
+            var differenze = new List<object>();
+            void Confronta(string campo, string etichetta, double proposto, double diSerie, string unita = "")
+            {
+                if (Math.Abs(proposto - diSerie) < 0.01) return;
+                differenze.Add(new
+                {
+                    campo,
+                    etichetta,
+                    daSerie = Math.Round(diSerie, 1),
+                    proposto = Math.Round(proposto, 1),
+                    unita,
+                });
+            }
+
+            Confronta("colori", "Numero di tinte", consigliati.NumeroColori, serie.NumeroColori);
+            Confronta("lisciatura", "Lisciatura della mappa", effettivi.RaggioLisciatura, serieEffettivi.RaggioLisciatura, " px");
+            Confronta("granelli", "Granelli da togliere", effettivi.Granelli, serieEffettivi.Granelli, " px²");
+            Confronta("rumore", "Riduzione rumore", effettivi.RiduzioneRumore, serieEffettivi.RiduzioneRumore, " px");
+            Confronta("tolleranza", "Fedeltà del tracciato", effettivi.Tolleranza, serieEffettivi.Tolleranza, " px");
 
             return Ok(new
             {
@@ -1145,6 +1179,10 @@ public class BackofficeController : ControllerBase
                     altezza = img.Height,
                 },
                 perche = Perche(misure),
+                /// Cosa cambia davvero rispetto alla taratura di serie, con i numeri che valgono
+                /// su questa immagine. Vuoto vuol dire che per questo disegno i predefiniti vanno
+                /// gia' bene, ed e' un'informazione, non un fallimento.
+                differenze,
                 valori = new
                 {
                     colori = consigliati.NumeroColori,
@@ -1156,6 +1194,14 @@ public class BackofficeController : ControllerBase
                     giri = consigliati.GiriLisciatura,
                     tolleranza = consigliati.Tolleranza,
                     angolo = consigliati.AngoloSpigolo,
+                },
+                effettivi = new
+                {
+                    colori = effettivi.NumeroColori,
+                    rumore = effettivi.RiduzioneRumore,
+                    lisciatura = effettivi.RaggioLisciatura,
+                    granelli = effettivi.Granelli,
+                    tolleranza = Math.Round(effettivi.Tolleranza, 1),
                 },
             });
         }
@@ -1278,10 +1324,29 @@ public class BackofficeController : ControllerBase
 
             // Chi rivettorializza lo fa **guardando il risultato precedente**: e' il momento in cui
             // la taratura di serie si rivela sbagliata per quel disegno, e l'unico in cui si puo'
-            // dire di meglio. Se non ha scelto niente, si usa quella configurata.
+            // dire di meglio.
+            //
+            // Se non ha scelto niente, invece di applicare i predefiniti si **guarda il disegno**:
+            // e' quel che rende il ritracciamento automatico anche dove non c'e' una finestra da
+            // cui scegliere -- la veste classica, e i ritracciamenti di gruppo, che sono poi il
+            // posto dove passa la maggior parte delle immagini. Vedi Disegno.Consiglia.
             var scelti = tracciato?.Su(_vectorize.Value.Tracciato);
+            var daMisura = scelti == null;
+            if (daMisura)
+            {
+                using var osservata = await CaricaImmagine.SuBiancoAsync(sorgente, ct);
+                var pixel = new byte[osservata.Width * osservata.Height * 3];
+                osservata.CopyPixelDataTo(pixel);
+                var misure = Disegno.Guarda(pixel, osservata.Width, osservata.Height, null);
+                scelti = Disegno.Consiglia(misure, _vectorize.Value.Tracciato);
+                _log.LogInformation("Ritracciamento di {File}: {Genere}, {Tinte} tinte, tratti {Spessore:0} px " +
+                                    "-> lisciatura {Lisciatura}, granelli {Granelli}, tinte chieste {Colori}",
+                                    carrier.FileName, misure.Genere, misure.Tinte, misure.Spessore,
+                                    scelti.RaggioLisciatura, scelti.Granelli, scelti.NumeroColori);
+            }
+
             var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct,
-                scelti == null ? null : new VectorizeOverride(Tracciato: scelti));
+                new VectorizeOverride(Tracciato: scelti));
 
             var riscritte = new List<ConsegnaRiscritta>();
             foreach (var v in vettoriali)
@@ -1330,7 +1395,11 @@ public class BackofficeController : ControllerBase
                 consegne: riscritte,
                 aColori: vr.AColori ?? false,
                 daRiportare: carrier.Inviato,
-                sorgente: daOriginale ? "originale" : "jpeg");
+                sorgente: daOriginale ? "originale" : "jpeg",
+                taratura: daMisura
+                    ? $"scelta guardando il disegno: {scelti!.NumeroColori} tinte, lisciatura " +
+                      $"{scelti.RaggioLisciatura}, granelli {scelti.Granelli}"
+                    : "scelta a mano nella finestra");
         }
         finally
         {

@@ -546,6 +546,15 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 .consigliato-titolo { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
 .consigliato ul { margin: 0 0 10px; padding-left: 18px; color: var(--muted); line-height: 1.6; font-size: 13px; }
 .consigliato li { margin: 3px 0; }
+/* Cosa cambia: due colonne di numeri, tabulari perché si leggono in coppia. */
+.consigliato-diff { border-collapse: collapse; margin: 0 0 10px; font-size: 13px; }
+.consigliato-diff th {
+  text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .3px; color: var(--muted); padding: 0 14px 4px 0;
+}
+.consigliato-diff td { padding: 3px 14px 3px 0; font-variant-numeric: tabular-nums; }
+.consigliato-diff td.da { color: var(--muted); text-decoration: line-through; }
+.consigliato-diff td.a { color: var(--accent); font-weight: 600; }
 
 /*
   La guida ai parametri. Le strisce d'esempio sono larghe e vanno lette da sinistra a destra:

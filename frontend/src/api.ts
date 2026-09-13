@@ -121,7 +121,21 @@ export type TracciatoConsigliato = {
   };
   /** Una riga per ogni numero che il disegno ha deciso, in italiano. */
   perche?: string[];
+  /**
+   * Cosa cambia davvero rispetto alla taratura di serie, con i numeri **veri su questa immagine**.
+   *
+   * Vuoto vuol dire che per questo disegno i predefiniti vanno già bene: è un'informazione, non un
+   * fallimento, e va detta invece di lasciare chi guarda a chiedersi perché non è successo niente.
+   */
+  differenze?: { campo: string; etichetta: string; daSerie: number; proposto: number; unita: string }[];
   valori?: Required<ParametriTracciato>;
+  /**
+   * Gli stessi numeri riportati alla grandezza vera dell'immagine.
+   *
+   * I parametri si scrivono riferiti a 3000 px di lato, ma su un'immagine da 11.000 px valgono
+   * altro: mostrare solo i primi darebbe a chi guarda un valore che non ritrova da nessuna parte.
+   */
+  effettivi?: { colori: number; rumore: number; lisciatura: number; granelli: number; tolleranza: number };
 };
 
 /** Rules the review process distilled from the author's corrections. */
@@ -540,6 +554,14 @@ export type RivettorializzaResult = {
   aColori: boolean;
   /** L'immagine è già su Adobe: il file nuovo va ricaricato là a mano. */
   daRiportare: boolean;
+  /** "originale" se si è ripartiti dal file caricato, "jpeg" se quello non c'era più. */
+  sorgente?: string;
+  /**
+   * Con che taratura si è tracciato, in una riga.
+   *
+   * Senza, la scelta automatica resta invisibile: il file cambia e nessuno sa perché.
+   */
+  taratura?: string | null;
 };
 
 export type JobSummary = {

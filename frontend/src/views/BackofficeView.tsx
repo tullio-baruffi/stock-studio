@@ -265,6 +265,7 @@ export default function BackofficeView() {
       setNotice(
         `"${it.fileName}": ritracciato ${r.aColori ? "a colori" : "in bianco e nero"}` +
         (dettaglio ? ` — ${dettaglio}.` : ".") +
+        (r.taratura ? ` Taratura ${r.taratura}.` : "") +
         (r.daRiportare ? " L'immagine è già pubblicata: il file nuovo va ricaricato su Adobe a mano." : "")
       );
       // La miniatura mostrata è quella del JPG, che non cambia: a cambiare sono SVG ed EPS, e si
