@@ -30,6 +30,16 @@ public class VectorizeOptions
     public double OptTolerance { get; set; } = 0.2;
 
     /// <summary>
+    /// Come disegnare i contorni del tracciato a colori: quante tinte, quanto rumore togliere,
+    /// quanto lisciare, con quanti nodi. Vedi <see cref="ParametriTracciato"/>.
+    ///
+    /// Sono i predefiniti dell'installazione. Chi carica un'immagine puo' scavalcarli uno per uno
+    /// dalla pagina di caricamento, e chi ritraccia un'immagine gia' consegnata puo' rifarlo dalla
+    /// finestra del dettaglio: la taratura giusta dipende dal disegno, non dall'installazione.
+    /// </summary>
+    public ParametriTracciato Tracciato { get; set; } = new();
+
+    /// <summary>
     /// Quante tinte nel tracciato a colori.
     ///
     /// Ventiquattro, e non e' un numero generoso ma il numero che serve: un'illustrazione di quelle
@@ -59,7 +69,11 @@ public class VectorizeOptions
     /// Il numero resta quindi un tetto, non una promessa: dice quante tinte al massimo, non quante
     /// se ne otterranno.
     /// </summary>
-    public int NumeroColori { get; set; } = 24;
+    public int NumeroColori
+    {
+        get { return Tracciato.NumeroColori; }
+        set { Tracciato.NumeroColori = value; }
+    }
 
     /// <summary>
     /// Quanto insistere nel rimettere insieme le tinte che descrivono la stessa cosa: un manto
@@ -70,11 +84,15 @@ public class VectorizeOptions
     /// illustrazioni del portfolio -- le coppie da fondere arrivavano a 861, quelle da tenere
     /// partivano da 1921 -- e messo in mezzo, a 1300, con un fattore due di margine.
     ///
-    /// Sta qui, e si puo' scavalcare dalla pagina di caricamento, proprio perche' e' l'unico che
-    /// potrebbe aver bisogno di una revisione su illustrazioni molto diverse. Zero disattiva la
-    /// passata: utile per vedere la tavolozza grezza quando si indaga su un difetto.
+    /// Si puo' scavalcare dalla pagina di caricamento, proprio perche' potrebbe aver bisogno di una
+    /// revisione su illustrazioni molto diverse. Zero disattiva la passata: utile per vedere la
+    /// tavolozza grezza quando si indaga su un difetto.
     /// </summary>
-    public double SogliaUnione { get; set; } = Tavolozza.UnionePredefinita;
+    public double SogliaUnione
+    {
+        get { return Tracciato.SogliaUnione; }
+        set { Tracciato.SogliaUnione = value; }
+    }
 
     /// <summary>Longest edge (px) of the exported JPEG preview/deliverable. 0 = keep original size.</summary>
     public int JpegLongEdge { get; set; } = 4000;

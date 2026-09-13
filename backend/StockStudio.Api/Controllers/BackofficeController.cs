@@ -100,6 +100,7 @@ public class BackofficeController : ControllerBase
     private readonly Punteggiatore _punteggiatore;
     private readonly QueueDispatcher _queue;
     private readonly PipelineHandoff _handoff;
+    private readonly IOptions<VectorizeOptions> _vectorize;
     private readonly ILogger<BackofficeController> _log;
 
     public BackofficeController(SharePointStore sp, IOptions<PipelineSettings> s,
@@ -109,6 +110,7 @@ public class BackofficeController : ControllerBase
                                 Punteggiatore punteggiatore,
                                 QueueDispatcher queue,
                                 PipelineHandoff handoff,
+                                IOptions<VectorizeOptions> vectorize,
                                 ILogger<BackofficeController> log)
     {
         _sp = sp;
@@ -121,6 +123,7 @@ public class BackofficeController : ControllerBase
         _punteggiatore = punteggiatore;
         _queue = queue;
         _handoff = handoff;
+        _vectorize = vectorize;
         _log = log;
     }
 
@@ -1080,14 +1083,16 @@ public class BackofficeController : ControllerBase
     /// originale che ha appena letto. Si riscrivono solo i vettoriali, che sono ciò che cambia.
     /// </summary>
     [HttpPost("items/{id:int}/rivettorializza")]
-    public async Task<IActionResult> Rivettorializza(int id, [FromQuery] string library, CancellationToken ct)
+    public async Task<IActionResult> Rivettorializza(int id, [FromQuery] string library,
+                                                     [FromBody] ParametriTracciatoModulo? tracciato,
+                                                     CancellationToken ct)
     {
         var bad = Guard(library);
         if (bad != null) return bad;
 
         try
         {
-            return Ok(await RivettorializzaOneAsync(library, id, ct));
+            return Ok(await RivettorializzaOneAsync(library, id, tracciato, ct));
         }
         catch (Exception ex)
         {
@@ -1109,7 +1114,9 @@ public class BackofficeController : ControllerBase
     /// round-trip in più e in cambio non può scadere, mostra a che punto è e, se una immagine
     /// fallisce, le altre proseguono.
     /// </summary>
-    private async Task<RivettorializzaResult> RivettorializzaOneAsync(string library, int id, CancellationToken ct)
+    private async Task<RivettorializzaResult> RivettorializzaOneAsync(string library, int id,
+                                                                      ParametriTracciatoModulo? tracciato,
+                                                                      CancellationToken ct)
     {
         var carrier = _sp.GetItem(library, id);
 
@@ -1168,7 +1175,12 @@ public class BackofficeController : ControllerBase
                 await System.IO.File.WriteAllBytesAsync(sorgente, _sp.DownloadFile(carrier.ServerRelativeUrl), ct);
             }
 
-            var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct);
+            // Chi rivettorializza lo fa **guardando il risultato precedente**: e' il momento in cui
+            // la taratura di serie si rivela sbagliata per quel disegno, e l'unico in cui si puo'
+            // dire di meglio. Se non ha scelto niente, si usa quella configurata.
+            var scelti = tracciato?.Su(_vectorize.Value.Tracciato);
+            var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct,
+                scelti == null ? null : new VectorizeOverride(Tracciato: scelti));
 
             var riscritte = new List<ConsegnaRiscritta>();
             foreach (var v in vettoriali)

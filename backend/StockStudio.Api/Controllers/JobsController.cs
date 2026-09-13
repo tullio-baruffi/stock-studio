@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using StockStudio.Api.Domain;
 using StockStudio.Api.Models;
 using StockStudio.Api.Services;
@@ -21,10 +23,11 @@ public class JobsController : ControllerBase
     private readonly StockValidator _validator;
     private readonly MetadataFeedbackStore _feedback;
     private readonly PipelineHandoff _handoff;
+    private readonly IOptions<VectorizeOptions> _vectorize;
 
     public JobsController(PipelineService pipeline, IJobStore store, CsvExporter csv, StockPipelineDispatcher dispatcher,
                           JobQueue queue, StockValidator validator, MetadataFeedbackStore feedback,
-                          PipelineHandoff handoff)
+                          PipelineHandoff handoff, IOptions<VectorizeOptions> vectorize)
     {
         _pipeline = pipeline;
         _store = store;
@@ -34,6 +37,7 @@ public class JobsController : ControllerBase
         _validator = validator;
         _feedback = feedback;
         _handoff = handoff;
+        _vectorize = vectorize;
     }
 
     [HttpPost]
@@ -62,17 +66,42 @@ public class JobsController : ControllerBase
     /// <paramref name="thresholds"/> carries the tracing cut the author picked for each picture
     /// while watching the preview in the browser, aligned by position with <paramref name="files"/>;
     /// an empty entry, or none at all, leaves that picture to Otsu.
+    ///
+    /// I numeri del tracciato a colori arrivano come **un campo JSON solo** invece che come campi
+    /// sciolti del modulo. Il motivo e' la cultura: i valori di un modulo multipart ASP.NET li legge
+    /// con quella del server, e su una macchina italiana "2.7" vale ventisette -- la tolleranza
+    /// finirebbe al massimo consentito, in silenzio e senza errori, perche' poi il controllo sui
+    /// limiti la riporterebbe dentro. Il JSON invece si legge sempre con la cultura invariante, ed
+    /// e' per giunta la stessa forma che usa la rivettorializzazione: una cosa sola da leggere.
+    ///
+    /// Valgono per **tutto il lotto**, perche' chi carica venti disegni insieme li ha scelti
+    /// insieme; per cambiarne uno c'e' la finestra della rivettorializzazione.
     /// </summary>
     [HttpPost("handoff")]
     [RequestSizeLimit(500_000_000)]
     public async Task<IActionResult> Handoff([FromForm] List<IFormFile> files, [FromForm] string? mode,
-                                             [FromForm] List<string>? thresholds, [FromForm] int? colori,
-                                             [FromForm] double? unione,
+                                             [FromForm] List<string>? thresholds,
+                                             [FromForm] string? tracciato,
                                              CancellationToken ct)
     {
         if (files == null || files.Count == 0) return BadRequest("Nessun file caricato.");
         if (!_handoff.Enabled)
             return BadRequest("Storage della pipeline non configurato (Pipeline:StorageConnectionString).");
+
+        ParametriTracciatoModulo? modulo;
+        try
+        {
+            modulo = ParametriTracciatoModulo.DaJson(tracciato);
+        }
+        catch (JsonException ex)
+        {
+            // Meglio rifiutare che tracciare con una taratura inventata: chi ha mandato quel campo
+            // credeva di aver scelto qualcosa, e consegnargli i predefiniti senza dirlo sarebbe la
+            // forma peggiore di riuscita.
+            return BadRequest($"Parametri del tracciato illeggibili: {ex.Message}");
+        }
+
+        var scelti = modulo?.Su(_vectorize.Value.Tracciato);
 
         var accepted = new List<object>();
         var rejected = new List<object>();
@@ -90,7 +119,8 @@ public class JobsController : ControllerBase
                     threshold = t;
 
                 await using var stream = f.OpenReadStream();
-                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold, colori, unione, ct);
+                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold,
+                                                    modulo?.Colori, modulo?.Unione, scelti, ct);
                 accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold });
             }
             catch (Exception ex)
@@ -107,6 +137,23 @@ public class JobsController : ControllerBase
             rejected = rejected.Count,
             items = accepted,
             errors = rejected,
+            // Che taratura e' stata applicata davvero, dopo il controllo sui limiti. Si riferisce
+            // perche' i numeri che arrivano possono essere riportati dentro l'intervallo consentito,
+            // e una taratura corretta in silenzio e' il difetto peggiore di questa strada: chi
+            // guarda il file consegnato non avrebbe modo di sapere che non e' quella che aveva
+            // scelto. Null quando non e' stato scelto niente e valgono i predefiniti.
+            tracciato = scelti == null ? null : new
+            {
+                colori = scelti.NumeroColori,
+                unione = scelti.SogliaUnione,
+                rumore = scelti.RiduzioneRumore,
+                lisciatura = scelti.RaggioLisciatura,
+                granelli = scelti.Granelli,
+                morbidezza = scelti.Morbidezza,
+                giri = scelti.GiriLisciatura,
+                tolleranza = scelti.Tolleranza,
+                angolo = scelti.AngoloSpigolo,
+            },
             message = $"{accepted.Count} immagini consegnate alla pipeline. "
                     + "Da qui in poi procede da sola: puoi chiudere o spegnere l'applicazione.",
         });

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using StockStudio.Api.Services;
 using StockStudio.Api.Services.Ai;
 using StockStudio.Api.Services.Integration;
+using StockStudio.Shared.Vettoriale;
 
 namespace StockStudio.Api.Controllers;
 
@@ -44,6 +45,71 @@ public class ConfigurationController : ControllerBase
         _queue = queue;
         _llm = llm;
         _agentCache = agentCache;
+    }
+
+    /// <summary>
+    /// I numeri con cui si traccia a colori, con il loro intervallo e una riga che dice a cosa
+    /// servono.
+    ///
+    /// Serve alle due schermate che li lasciano scegliere -- il caricamento e la finestra della
+    /// rivettorializzazione -- e sta qui invece che scritto nella pagina perche' i predefiniti sono
+    /// una proprieta' dell'installazione: cambiarli in <c>appsettings</c> deve cambiare quel che si
+    /// vede, non lasciare la pagina a raccontare numeri che nessuno usa piu'.
+    /// </summary>
+    [HttpGet("tracciato")]
+    public IActionResult Tracciato()
+    {
+        var p = _vector.Tracciato.Convalidato();
+        return Ok(new
+        {
+            riferimento = ParametriTracciato.LatoDiRiferimento,
+            valori = new
+            {
+                colori = p.NumeroColori,
+                unione = p.SogliaUnione,
+                rumore = p.RiduzioneRumore,
+                lisciatura = p.RaggioLisciatura,
+                granelli = p.Granelli,
+                morbidezza = p.Morbidezza,
+                giri = p.GiriLisciatura,
+                tolleranza = p.Tolleranza,
+                angolo = p.AngoloSpigolo,
+            },
+            campi = new object[]
+            {
+                Campo("colori", "Numero di tinte", 2, 64, 1,
+                      "Quante campiture al massimo. È un tetto, non una promessa: le tinte che " +
+                      "descrivono una frangia di contorno invece di una zona vengono scartate."),
+                Campo("unione", "Unione tinte gemelle", 0, 4000, 50,
+                      "Quanto insistere nel rimettere insieme due tinte che descrivono la stessa " +
+                      "cosa. Zero le lascia separate, e serve a vedere la tavolozza grezza."),
+                Campo("rumore", "Riduzione rumore", 0, 8, 1,
+                      "Il raggio della mediana passata prima di scegliere le tinte. Toglie " +
+                      "l'ondeggiamento del JPEG, che altrimenti decide da che parte cade il pixel " +
+                      "e fa nascere il confine già frastagliato. Zero la salta."),
+                Campo("lisciatura", "Lisciatura della mappa", 0, 6, 1,
+                      "Quanto si sfoca l'appartenenza a una tinta per raddrizzare la scalinata di " +
+                      "pixel. Alzarlo su un disegno con linee sottili le mangia."),
+                Campo("granelli", "Granelli da togliere", 0, 20000, 10,
+                      "Sotto quanti pixel una macchia è rumore invece che un dettaglio. Zero non " +
+                      "ne toglie nessuna. È quello che pesa di più: non toglie nodi da un " +
+                      "contorno, toglie contorni interi."),
+                Campo("tolleranza", "Fedeltà del tracciato", 0.1, 12, 0.1,
+                      "Di quanto la curva può scostarsi dai punti misurati. Più alto, meno nodi e " +
+                      "curve più dolci; più basso, più nodi e più aderenza alla scalinata."),
+                Campo("angolo", "Angolo di spigolo", 15, 170, 5,
+                      "Oltre quanti gradi di svolta il contorno ha uno spigolo vero da tenere, " +
+                      "invece di una curva."),
+                Campo("morbidezza", "Morbidezza dei contorni", 0, 12, 0.5,
+                      "Di quanti pixel il contorno può allontanarsi dalla scalinata mentre lo si " +
+                      "liscia. È una garanzia contro gli spigoli smussati più che una leva."),
+                Campo("giri", "Giri di lisciatura", 0, 60, 1,
+                      "Quante passate di lisciatura. Oltre la convergenza non cambia più niente."),
+            },
+        });
+
+        static object Campo(string nome, string etichetta, double min, double max, double passo, string spiega)
+            => new { nome, etichetta, min, max, passo, spiega };
     }
 
     [HttpGet]

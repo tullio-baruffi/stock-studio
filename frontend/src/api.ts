@@ -50,7 +50,58 @@ export type HandoffResponse = {
   rejected: number;
   items: { file: string; blob: string; threshold?: number | null }[];
   errors: { file: string; error: string }[];
+  /**
+   * La taratura applicata davvero, dopo il controllo sui limiti del servizio.
+   *
+   * Serve perché un numero fuori intervallo viene riportato dentro senza dirlo: una tolleranza
+   * corretta in silenzio darebbe file diversi da quelli che si erano chiesti, e chi li guarda non
+   * avrebbe modo di accorgersene. Null quando non è stato scelto niente e valgono i predefiniti.
+   */
+  tracciato?: Required<ParametriTracciato> | null;
   message: string;
+};
+
+/**
+ * I numeri con cui si traccia a colori.
+ *
+ * Sono tutti facoltativi perché "non ho scelto" e "ho scelto zero" devono restare distinguibili:
+ * zero granelli vuol dire «non togliere niente», mentre non mandare il campo vuol dire «usa la
+ * taratura configurata». Mandarli sempre tutti farebbe sparire quella differenza.
+ */
+export type ParametriTracciato = {
+  colori?: number;
+  unione?: number;
+  rumore?: number;
+  lisciatura?: number;
+  granelli?: number;
+  morbidezza?: number;
+  giri?: number;
+  tolleranza?: number;
+  angolo?: number;
+};
+
+/** Un cursore del pannello del tracciato, così com'è descritto dal servizio. */
+export type CampoTracciato = {
+  nome: keyof ParametriTracciato;
+  etichetta: string;
+  min: number;
+  max: number;
+  passo: number;
+  spiega: string;
+};
+
+/**
+ * I predefiniti del tracciato e i campi da mostrare.
+ *
+ * Arrivano dal servizio invece di stare scritti nella pagina perché i predefiniti sono una
+ * proprietà dell'installazione: cambiarli in `appsettings` deve cambiare quello che si vede, non
+ * lasciare la pagina a raccontare numeri che nessuno usa più.
+ */
+export type ConfigTracciato = {
+  /** Il lato lungo a cui le misure in pixel si riferiscono: vedi ParametriTracciato.PerImmagine. */
+  riferimento: number;
+  valori: Required<ParametriTracciato>;
+  campi: CampoTracciato[];
 };
 
 /** Rules the review process distilled from the author's corrections. */
@@ -696,14 +747,24 @@ export const api = {
    * same order; "auto" leaves that picture to Otsu inside the Function.
    */
   handoff(files: File[], mode: "vector" | "colore" | "raster" = "vector",
-          thresholds?: (number | null)[], colori?: number, unione?: number): Promise<HandoffResponse> {
+          thresholds?: (number | null)[], tracciato?: ParametriTracciato): Promise<HandoffResponse> {
     const fd = new FormData();
     files.forEach((file) => fd.append("files", file, file.name));
     fd.append("mode", mode);
-    if (colori != null) fd.append("colori", String(colori));
-    // Zero è una scelta legittima ("non unire niente"), quindi si confronta con null e non con
-    // falsy: `if (unione)` scarterebbe proprio il caso che serve per diagnosticare un difetto.
-    if (unione != null) fd.append("unione", String(unione));
+    // I numeri del tracciato viaggiano come **un campo JSON solo**, non come campi sciolti.
+    //
+    // Non è un vezzo: i campi di un modulo multipart ASP.NET li legge con la cultura del server,
+    // e su una macchina italiana il punto di "2.7" è un separatore di migliaia — quel numero
+    // arriverebbe come 27, verrebbe riportato dentro i limiti a 12, e la fedeltà del tracciato
+    // sarebbe al massimo senza che nessuno l'abbia chiesto e senza un errore da nessuna parte.
+    // Il JSON invece si legge sempre con la cultura invariante, e per giunta è la stessa forma che
+    // usa la rivettorializzazione: una sola cosa da leggere invece di due.
+    //
+    // Solo i campi davvero scelti: un campo assente lascia il posto al predefinito del servizio,
+    // mentre zero è una scelta legittima ("non unire niente", "non togliere granelli") e come tale
+    // va mandata.
+    const scelti = Object.fromEntries(Object.entries(tracciato ?? {}).filter(([, v]) => v != null));
+    if (Object.keys(scelti).length > 0) fd.append("tracciato", JSON.stringify(scelti));
     // Appended after the files and in the same order: the server pairs the two lists by position,
     // which is the only pairing that survives two uploads sharing a file name.
     files.forEach((_, i) => {
@@ -917,8 +978,18 @@ export const api = {
     }).then(jsonOrThrow);
   },
   /** Ritraccia SVG ed EPS di un'immagine già in libreria, riscrivendoli al loro posto. */
-  backofficeRivettorializza(library: string, id: number): Promise<RivettorializzaResult> {
-    return f(`/api/backoffice/items/${id}/rivettorializza?library=${encodeURIComponent(library)}`, { method: "POST" }).then(jsonOrThrow);
+  backofficeRivettorializza(library: string, id: number, tracciato?: ParametriTracciato): Promise<RivettorializzaResult> {
+    return f(`/api/backoffice/items/${id}/rivettorializza?library=${encodeURIComponent(library)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Un oggetto vuoto e non `null`: il corpo assente farebbe rifiutare la richiesta dai
+      // controlli sul tipo di contenuto, e «nessuna scelta» si dice meglio con nessun campo.
+      body: JSON.stringify(tracciato ?? {}),
+    }).then(jsonOrThrow);
+  },
+  /** I predefiniti del tracciato a colori e i campi da mostrare per sceglierli. */
+  configTracciato(): Promise<ConfigTracciato> {
+    return f("/api/configuration/tracciato").then(jsonOrThrow);
   },
   trends(horizonDays = 150, style = "silhouette"): Promise<Trends> {
     return f(`/api/trends?horizonDays=${horizonDays}&style=${encodeURIComponent(style)}`).then(jsonOrThrow);

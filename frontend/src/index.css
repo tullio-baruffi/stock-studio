@@ -503,6 +503,40 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
   background: var(--accent); border-color: var(--accent); color: #08080c; font-weight: 700;
 }
 
+/*
+  Il pannello dei parametri del tracciato.
+
+  I cursori stanno in una griglia che si riempie da sola invece che in colonne fisse: gli stessi
+  campi compaiono in una barra larga quanto la pagina (caricamento) e dentro una finestra stretta
+  (rivettorializzazione), e due disposizioni scritte a mano divergerebbero alla prima aggiunta.
+*/
+.tracciato-pannello { width: 100%; }
+.tracciato-campi {
+  display: grid; gap: 14px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.tracciato-campo label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.tracciato-nome { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+/* Il numero in cifre tabulari: spostando il cursore la riga non deve ballare. */
+.tracciato-valore { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; }
+.tracciato-valore.mosso { color: var(--accent); }
+.tracciato-ripristina {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 13px; padding: 0 0 0 6px; line-height: 1;
+}
+.tracciato-ripristina:hover { color: var(--text); }
+.tracciato-campo input[type="range"] { width: 100%; margin: 4px 0 2px; }
+.tracciato-campo p { margin: 0; line-height: 1.5; }
+.tracciato-pie {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+/* Nella barra del caricamento il pannello va a capo sotto la spiegazione, non accanto. */
+.bulkbar.tracciato-barra { display: block; }
+.bulkbar.tracciato-barra > span { display: block; line-height: 1.6; margin-bottom: 12px; }
+/* La finestra del ritracciamento mostra tutti i campi, e quella normale è troppo stretta. */
+.modal.tracciato-modale { max-width: 720px; }
+
 /* Job actions */
 .jobactions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .btn.danger { border-color: rgba(255,91,106,.5); color: #ffd7db; }

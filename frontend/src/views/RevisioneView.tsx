@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type BackofficeItem, type Deliverable } from "../api";
+import { api, type BackofficeItem, type Deliverable, type ParametriTracciato } from "../api";
 import AuthImage from "../components/AuthImage";
 import { AvvisoSessioneSharePoint } from "../components/AccessoSharePoint";
 import { Attesa, Rotella, Segnaposto } from "../components/Attesa";
+import PannelloTracciato from "../components/PannelloTracciato";
 
 /**
  * Revisione in due tempi: prima si guarda l'insieme, poi si entra in una immagine.
@@ -110,6 +111,15 @@ export default function RevisioneView() {
    * sarebbe invisibile proprio dove la si cerca.
    */
   const [ritracciate, setRitracciate] = useState<Record<number, number>>({});
+  /**
+   * La finestra con cui si sceglie **come** ritracciare, e quel che ci si è scelto.
+   *
+   * La scelta resta fra un'immagine e l'altra di proposito: quando una taratura si rivela giusta
+   * per un disegno, di solito lo è anche per i suoi fratelli dello stesso lotto, e rimetterla a
+   * mano ogni volta sarebbe il modo più sicuro per non usarla.
+   */
+  const [finestraTracciato, setFinestraTracciato] = useState(false);
+  const [tracciatoScelto, setTracciatoScelto] = useState<ParametriTracciato>({});
   const [nota, setNota] = useState("");
 
   const [fascia, setFascia] = useState<Fascia>("tutte");
@@ -515,15 +525,20 @@ export default function RevisioneView() {
    * Non è la rigenerazione dei metadati: quella riscrive le parole chiamando il modello a
    * pagamento, questa riscrive il disegno e non costa niente in chiamate. Serve perché il
    * vettorizzatore migliora nel tempo mentre le immagini già lavorate restano com'erano.
+   *
+   * I parametri arrivano dalla finestra che si apre prima, quando si ritraccia una sola immagine:
+   * è il momento in cui si **vede** che la taratura di serie non andava bene per quel disegno, ed
+   * è l'unico in cui si può dire di meglio. Sul blocco non si chiede niente, perché una taratura
+   * scelta guardando un'immagine non vale per le altre ventitré.
    */
-  const rivettorializza = useCallback(async (id?: number) => {
+  const rivettorializza = useCallback(async (id?: number, tracciato?: ParametriTracciato) => {
     const bersaglio = id ?? corrente?.id;
     if (!bersaglio || occupato) return;
     setOccupato(true);
     setAzione("ritraccia");
     setEsito({ testo: "Ritracciamento in corso: qualche secondo…", tipo: "ok" });
     try {
-      const r = await api.backofficeRivettorializza(stadio, bersaglio);
+      const r = await api.backofficeRivettorializza(stadio, bersaglio, tracciato);
       if (!r.ok) {
         setEsito({ testo: r.error ?? "Ritracciamento non riuscito.", tipo: "errore" });
         return;
@@ -1242,9 +1257,9 @@ export default function RevisioneView() {
                 : <>↻ Rigenera <span className="cn-cost">(a pagamento)</span></>}
             </button>
             {conVettoriali(corrente) && (
-              <button className="btn small" onClick={() => rivettorializza()} disabled={occupato}
-                      title="Rifà SVG ed EPS dal JPG con il vettorizzatore corrente: metadati e JPG restano come sono">
-                {azione === "ritraccia" ? <><Rotella /> Ritraccio…</> : "⟳ Ritraccia vettoriali"}
+              <button className="btn small" onClick={() => setFinestraTracciato(true)} disabled={occupato}
+                      title="Rifà SVG ed EPS dal JPG: si scelgono prima i parametri; metadati e JPG restano come sono">
+                {azione === "ritraccia" ? <><Rotella /> Ritraccio…</> : "⟳ Ritraccia vettoriali…"}
               </button>
             )}
             <button className="btn small" onClick={() => setZoom((z) => !z)}
@@ -1261,6 +1276,46 @@ export default function RevisioneView() {
           </div>
         </>
       ) : null}
+
+      {finestraTracciato && corrente && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setFinestraTracciato(false)}>
+          <div
+            className="modal tracciato-modale"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ritraccia-titolo"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="ritraccia-titolo">Ritraccia «{corrente.fileName}»</h3>
+            <p className="muted small">
+              SVG ed EPS vengono rifatti dall'originale conservato, o dal JPG se l'originale non c'è
+              più. I metadati e il JPG non si toccano, e SharePoint conserva le versioni precedenti
+              dei file riscritti. Se il disegno precedente aveva contorni ondulati o troppi
+              frammenti, è qui che si corregge.
+            </p>
+            <PannelloTracciato
+              valore={tracciatoScelto}
+              onChange={setTracciatoScelto}
+              disabilitato={occupato}
+            />
+            <div className="modal-actions">
+              <button className="btn ghost" onClick={() => setFinestraTracciato(false)} disabled={occupato}>
+                Annulla
+              </button>
+              <button
+                className="btn"
+                disabled={occupato}
+                onClick={() => {
+                  setFinestraTracciato(false);
+                  void rivettorializza(corrente.id, tracciatoScelto);
+                }}
+              >
+                {occupato ? <><Rotella /> Ritraccio…</> : "Ritraccia"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

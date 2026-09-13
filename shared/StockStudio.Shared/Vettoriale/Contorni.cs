@@ -90,28 +90,24 @@ namespace StockStudio.Shared.Vettoriale
         /// <param name="indici">A quale tinta appartiene ogni pixel.</param>
         /// <param name="opaco">Quali pixel sono disegno; null o vuoto vuol dire tutti.</param>
         /// <param name="quante">Quante tinte ha la tavolozza.</param>
-        /// <param name="tolleranza">
-        /// Di quanti pixel la curva puo' scostarsi dal confine misurato: vedi
-        /// <see cref="AdattaCubiche"/>.
-        /// </param>
-        /// <param name="tolleranza">
-        /// Quanto la curva puo' scostarsi dai punti misurati. Non e' l'errore sulla forma: i punti
-        /// stanno sugli spigoli interi dei pixel e portano mezzo pixel di quantizzazione, quindi una
-        /// tolleranza stretta non avvicina alla forma vera -- ricalca il rumore. Misurato su un
-        /// cerchio di raggio noto, passando da 0,6 a 1,2 i segmenti scendono da 220 a 76 **e** lo
-        /// scarto dal cerchio vero resta 0,21 px.
+        /// <param name="parametri">
+        /// Quanto lisciare il confine e quanto fedelmente ridurlo a curve: vedi
+        /// <see cref="ParametriTracciato"/>. Null vuol dire la taratura di serie.
         /// </param>
         public static Esito Estrai(byte[] indici, bool[]? opaco, int larghezza, int altezza,
-                                   int quante, double tolleranza = 1.2)
+                                   int quante, ParametriTracciato? parametri = null)
         {
             if (indici == null) throw new ArgumentNullException("indici");
             if (quante < 0) quante = 0;
+            var p = (parametri ?? ParametriTracciato.Predefiniti).Convalidato();
+            var tolleranza = p.Tolleranza;
+            var cosenoSpigolo = p.CosenoSpigolo;
             var zone = new List<Anello>[quante];
             for (var i = 0; i < quante; i++) zone[i] = new List<Anello>();
             if (larghezza < 1 || altezza < 1 || quante < 1)
                 return new Esito { Zone = zone };
 
-            var r = new Reticolo(indici, opaco, larghezza, altezza);
+            var r = new Reticolo(indici, opaco, larghezza, altezza, p.GiriLisciatura, p.Morbidezza);
 
             // ---- Gli archi ------------------------------------------------------------------
             // Prima quelli che partono da un nodo, cosi' ogni catena viene presa per intero; poi
@@ -136,7 +132,7 @@ namespace StockStudio.Shared.Vettoriale
                 var chiuso = punti.Count > 2
                           && Math.Abs(punti[0].X - punti[punti.Count - 1].X) < 1e-9
                           && Math.Abs(punti[0].Y - punti[punti.Count - 1].Y) < 1e-9;
-                var arco = AdattaCubiche(punti, tolleranza, chiuso, larghezza, altezza);
+                var arco = AdattaCubiche(punti, tolleranza, cosenoSpigolo, chiuso, larghezza, altezza);
                 arco.Chiuso = chiuso;
                 archi.Add(arco);
             }
@@ -184,13 +180,18 @@ namespace StockStudio.Shared.Vettoriale
             // archi, perche' un vertice deve avere **una** posizione sola: e' quella che tiene
             // insieme gli archi che ci si incontrano, e quindi le zone che quegli archi separano.
             private readonly int[] _indiceVertice;      // -1 dove non passa nessun confine
+            private readonly int _giri;
+            private readonly double _spostamentoMassimo;
             private double[] _vx = new double[0];
             private double[] _vy = new double[0];
 
-            public Reticolo(byte[] indici, bool[]? opaco, int larghezza, int altezza)
+            public Reticolo(byte[] indici, bool[]? opaco, int larghezza, int altezza,
+                            int giri, double spostamentoMassimo)
             {
                 _indici = indici; _w = larghezza; _h = altezza; _lw = larghezza + 1;
                 _opaco = opaco;
+                _giri = giri;
+                _spostamentoMassimo = spostamentoMassimo;
                 _haOpaco = opaco != null && opaco.Length == larghezza * altezza;
 
                 _orizz = new bool[_w * (_h + 1)];
@@ -249,9 +250,8 @@ namespace StockStudio.Shared.Vettoriale
             /// ## Cosa non si tocca
             /// I vertici sul bordo della tavola, che devono restare allineati o l'immagine finirebbe
             /// con i lati ondulati. E nessun punto si allontana di piu' di
-            /// <see cref="SpostamentoMassimo"/> da dove stava: la scalinata da togliere e' alta un
-            /// pixel, quindi oltre quella misura non si sta piu' raddrizzando un gradino ma
-            /// cancellando uno spigolo del disegno.
+            /// <see cref="ParametriTracciato.Morbidezza"/> da dove stava: oltre quella misura non si
+            /// sta piu' raddrizzando il confine ma cancellando uno spigolo del disegno.
             /// </summary>
             private void Liscia()
             {
@@ -275,7 +275,7 @@ namespace StockStudio.Shared.Vettoriale
                 var qy = new double[quanti];
                 for (var k = 0; k < quanti; k++) { px[k] = vx[k]; py[k] = vy[k]; }
 
-                for (var giro = 0; giro < GiriDiLisciatura; giro++)
+                for (var giro = 0; giro < _giri; giro++)
                 {
                     UnPasso(vx, vy, px, py, qx, qy, Lambda);
                     UnPasso(vx, vy, qx, qy, px, py, Mu);
@@ -286,9 +286,9 @@ namespace StockStudio.Shared.Vettoriale
                     var dx = px[k] - vx[k];
                     var dy = py[k] - vy[k];
                     var d = Math.Sqrt(dx * dx + dy * dy);
-                    if (d > SpostamentoMassimo)
+                    if (d > _spostamentoMassimo)
                     {
-                        var f = SpostamentoMassimo / d;
+                        var f = _spostamentoMassimo / d;
                         px[k] = vx[k] + dx * f;
                         py[k] = vy[k] + dy * f;
                     }
@@ -517,21 +517,15 @@ namespace StockStudio.Shared.Vettoriale
         }
 
         // ---- Quanto lisciare, e quanto e' lecito muovere il disegno --------------------------
-        // Vedi Reticolo.Liscia per il perche' di ciascuno.
+        // Vedi Reticolo.Liscia per il perche' di ciascuno. Quanti giri e quanto ci si puo'
+        // allontanare stanno invece in ParametriTracciato, perche' dipendono dal disegno.
 
-        private const int GiriDiLisciatura = 12;
         private const double Lambda = 0.55;
         /// <summary>
         /// Il passo che ridilata. Deve valere poco piu' di <see cref="Lambda"/> in negativo: e' la
         /// condizione perche' la forma non si restringa a ogni giro.
         /// </summary>
         private const double Mu = -0.58;
-        /// <summary>
-        /// Di quanto al massimo un punto puo' allontanarsi dal confine misurato. La scalinata da
-        /// raddrizzare e' alta un pixel: oltre un pixel non si toglie piu' un gradino, si smussa uno
-        /// spigolo vero.
-        /// </summary>
-        private const double SpostamentoMassimo = 1.0;
 
         // ---- Dalle spezzate alle curve ------------------------------------------------------
 
@@ -549,7 +543,8 @@ namespace StockStudio.Shared.Vettoriale
         /// tolleranza si taglia proprio li' e si riprova sulle due meta': dove il confine e' dolce
         /// basta una curva, dove e' mosso ne servono di piu', e non deve deciderlo nessuno prima.
         /// </summary>
-        private static Arco AdattaCubiche(List<Punto> punti, double tolleranza, bool chiuso, double larghezza, double altezza)
+        private static Arco AdattaCubiche(List<Punto> punti, double tolleranza, double cosenoSpigolo,
+                                          bool chiuso, double larghezza, double altezza)
         {
             var arco = new Arco { Inizio = punti[0], Fine = punti[punti.Count - 1] };
             if (punti.Count < 2) return arco;
@@ -559,7 +554,7 @@ namespace StockStudio.Shared.Vettoriale
                 return arco;
             }
 
-            var tagli = TrovaSpigoli(punti);
+            var tagli = TrovaSpigoli(punti, cosenoSpigolo, larghezza, altezza);
 
             // Agli estremi dell'arco la direzione si prende da un lato solo, perche' di la' non c'e'
             // altro. Ma in un anello chiuso i due estremi sono lo **stesso punto**: prendendo ognuno
@@ -570,7 +565,7 @@ namespace StockStudio.Shared.Vettoriale
             var tFine = Tangente(punti, punti.Count - 1, -1);
             if (chiuso)
             {
-                var cucitura = TangenteCucitura(punti);
+                var cucitura = TangenteCucitura(punti, cosenoSpigolo);
                 if (cucitura.HasValue)
                 {
                     tInizio = cucitura.Value;
@@ -593,7 +588,7 @@ namespace StockStudio.Shared.Vettoriale
         /// fine e avanti dall'inizio. Restituisce null quando li' c'e' uno spigolo vero, che va
         /// lasciato tale.
         /// </summary>
-        private static Punto? TangenteCucitura(List<Punto> punti)
+        private static Punto? TangenteCucitura(List<Punto> punti, double cosenoSpigolo)
         {
             var n = punti.Count;
             if (n < 2 * Finestra + 2) return null;
@@ -609,7 +604,7 @@ namespace StockStudio.Shared.Vettoriale
             var la = Math.Sqrt(ax * ax + ay * ay);
             var lb = Math.Sqrt(bx * bx + by * by);
             if (la < 1e-9 || lb < 1e-9) return null;
-            if ((ax * bx + ay * by) / (la * lb) <= CosenoSpigolo) return null;   // spigolo vero
+            if ((ax * bx + ay * by) / (la * lb) <= cosenoSpigolo) return null;   // spigolo vero
 
             var dx = dopo.X - prima.X;
             var dy = dopo.Y - prima.Y;
@@ -635,35 +630,65 @@ namespace StockStudio.Shared.Vettoriale
         /// immediati: sul reticolo ogni tratto e' orizzontale o verticale, quindi fra due punti
         /// vicini l'angolo o e' zero o e' novanta gradi, e ogni gradino sembrerebbe uno spigolo.
         /// Guardando piu' lontano una scalinata risulta per quel che e', cioe' una diagonale.
+        ///
+        /// ## Gli angoli della tavola
+        /// Guardare lontano ha un prezzo: i primi e gli ultimi <see cref="Finestra"/> punti di un
+        /// arco non si possono esaminare, perche' di la' non ci sono abbastanza punti. Di solito non
+        /// importa -- un arco comincia gia' in un nodo, che e' gia' un taglio. Importa invece
+        /// **sull'angolo della tavola**, dove il contorno gira di novanta gradi a un passo
+        /// dall'estremo: nessuno lo vedeva, la curva tagliava l'angolo, e il pixel di spigolo
+        /// restava fuori da ogni campitura -- un puntino di fondo nell'angolo del disegno.
+        ///
+        /// Sul bordo della tavola il controllo si puo' fare con la finestra che ci sta, senza
+        /// rischiare falsi spigoli: quei punti il lisciatore non li muove mai (vedi
+        /// <see cref="Reticolo.Liscia"/>), quindi li' una svolta e' una svolta e non un gradino.
         /// </summary>
-        private static List<int> TrovaSpigoli(List<Punto> punti)
+        private static List<int> TrovaSpigoli(List<Punto> punti, double cosenoSpigolo,
+                                              double larghezza, double altezza)
         {
             var n = punti.Count;
             var tagli = new List<int> { 0 };
-            for (var i = Finestra; i < n - Finestra; i++)
+            for (var i = 1; i < n - 1; i++)
             {
-                var ax = punti[i].X - punti[i - Finestra].X;
-                var ay = punti[i].Y - punti[i - Finestra].Y;
-                var bx = punti[i + Finestra].X - punti[i].X;
-                var by = punti[i + Finestra].Y - punti[i].Y;
+                var f = Finestra;
+                var bordo = SulBordo(punti[i], larghezza, altezza);
+                if (i < Finestra || i > n - 1 - Finestra)
+                {
+                    // Vicino agli estremi si guarda solo il bordo della tavola, con la finestra piu'
+                    // larga che ci sta.
+                    if (!bordo) continue;
+                    f = Math.Min(i, n - 1 - i);
+                    if (f < 1) continue;
+                }
+
+                var ax = punti[i].X - punti[i - f].X;
+                var ay = punti[i].Y - punti[i - f].Y;
+                var bx = punti[i + f].X - punti[i].X;
+                var by = punti[i + f].Y - punti[i].Y;
                 var la = Math.Sqrt(ax * ax + ay * ay);
                 var lb = Math.Sqrt(bx * bx + by * by);
                 if (la < 1e-9 || lb < 1e-9) continue;
-                if ((ax * bx + ay * by) / (la * lb) > CosenoSpigolo) continue;
-                if (i - tagli[tagli.Count - 1] < Finestra) continue;   // uno spigolo per curva
+                if ((ax * bx + ay * by) / (la * lb) > cosenoSpigolo) continue;
+                // Uno spigolo per curva, che su una scalinata evita di tagliare a ogni gradino.
+                // L'angolo della tavola fa eccezione: li' il pixel di spigolo va tenuto comunque.
+                if (!bordo && i - tagli[tagli.Count - 1] < Finestra) continue;
+                if (i == tagli[tagli.Count - 1]) continue;
                 tagli.Add(i);
             }
             if (tagli[tagli.Count - 1] != n - 1) tagli.Add(n - 1);
             return tagli;
         }
 
+        /// <summary>Se il punto sta su uno dei quattro lati della tavola.</summary>
+        private static bool SulBordo(Punto p, double larghezza, double altezza)
+        {
+            if (larghezza <= 0 || altezza <= 0) return false;
+            const double Sfiora = 1e-6;
+            return p.X <= Sfiora || p.Y <= Sfiora
+                || p.X >= larghezza - Sfiora || p.Y >= altezza - Sfiora;
+        }
+
         private const int Finestra = 3;
-        /// <summary>
-        /// Sotto questo coseno la direzione e' cambiata troppo per essere una curva: circa
-        /// sessantacinque gradi. Piu' in basso si perderebbero gli angoli retti dei disegni
-        /// geometrici, piu' in alto ogni ondulazione diventerebbe uno spigolo.
-        /// </summary>
-        private const double CosenoSpigolo = 0.42;
 
         /// <summary>
         /// Adatta una cubica al tratto indicato; se non basta, taglia nel punto peggiore e riprova.
@@ -707,15 +732,28 @@ namespace StockStudio.Shared.Vettoriale
             var nodi = new List<int> { da, a };
             var tetto = Math.Min(MassimoNodi, a - da + 1);
 
-            // In un anello chiuso il primo punto e l'ultimo sono lo stesso punto: partendo dai soli
-            // estremi la corda varrebbe zero e non ci sarebbe spline da risolvere. Servono dei nodi
-            // in mezzo fin dall'inizio -- e comunque partire con qualche nodo fa risparmiare giri.
-            var passo = (a - da) / 4;
-            if (passo >= 1)
-                for (var k = a - passo; k > da; k -= passo)
-                    InserisciNodo(nodi, k);
-            else if (a - da >= 2)
+            // Si parte dal minimo indispensabile e si aggiunge solo quando la misura lo chiede.
+            //
+            // Prima si partiva da quattro tratti sempre, per "risparmiare giri". Ma il ciclo qui
+            // sotto i nodi li **aggiunge** e basta: non ne toglie nessuno. Partire da quattro
+            // significava quindi consegnare quattro curve anche dove ne bastava una, e su un
+            // disegno fatto di archi dolci -- una bolla, il dorso di una balena -- e' quasi
+            // dovunque. Misurato sull'illustrazione delle balene: 8018 nodi partendo da quattro,
+            // 2716 partendo dal minimo, a parita' di tolleranza e di forma.
+            //
+            // Il minimo non e' sempre due. In un anello chiuso il primo punto e l'ultimo sono lo
+            // stesso punto: con due soli nodi la corda varrebbe zero e non ci sarebbe spline da
+            // risolvere. Li' servono tre tratti, che e' il meno con cui un anello si chiude.
+            var chiuso = Corda(p[da], p[a]) < 1e-9;
+            if (chiuso && a - da >= 3)
+            {
+                InserisciNodo(nodi, da + (a - da) / 3);
+                InserisciNodo(nodi, da + 2 * (a - da) / 3);
+            }
+            else if (chiuso && a - da >= 2)
+            {
                 InserisciNodo(nodi, (da + a) / 2);
+            }
 
             Punto[]? m = null;
 

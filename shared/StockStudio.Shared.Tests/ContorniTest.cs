@@ -260,6 +260,81 @@ public class ContorniTest
     }
 
     /// <summary>
+    /// L'angolo della tavola non si taglia, **nemmeno con la tolleranza larga**.
+    ///
+    /// E' un difetto vero, e insidioso perche' si vedeva solo da un lato: la ricerca degli spigoli
+    /// guardava la direzione fra punti distanti tre passi, e quindi non poteva esaminare i primi e
+    /// gli ultimi tre punti di un arco. Sull'angolo della tavola il contorno gira di novanta gradi a
+    /// un passo dall'estremo: nessuno lo vedeva, la curva tagliava dritta, e il pixel di spigolo
+    /// restava fuori da ogni campitura -- un puntino di fondo nell'angolo del disegno.
+    ///
+    /// Prima non si notava perche' l'adattamento partiva sempre da quattro tratti, e uno dei nodi
+    /// capitava li' vicino per caso. Appena si e' smesso di sprecare quei nodi, il buco e' uscito.
+    ///
+    /// Si prova anche con la tolleranza al massimo perche' e' li' che la curva ha piu' licenza di
+    /// allontanarsi: se l'angolo regge con quella, regge con tutte.
+    /// </summary>
+    [Theory]
+    [InlineData(0.6)]
+    [InlineData(2.7)]
+    [InlineData(12.0)]
+    public void LAngoloDellaTavolaNonSiTaglia(double tolleranza)
+    {
+        const int w = 60, h = 40;
+        var contorni = Contorni.Estrai(Diagonale(w, h), null, w, h, 2,
+                                       new ParametriTracciato { Tolleranza = tolleranza });
+
+        var coperture = Riempitore.Coperture(contorni, w, h);
+
+        Assert.Equal(0, coperture.Count(c => c == 0));
+        Assert.Equal(0, coperture.Count(c => c > 1));
+    }
+
+    /// <summary>
+    /// Una tolleranza piu' larga deve costare **meno** nodi, non di piu': e' tutto quello che quel
+    /// numero promette, ed e' il motivo per cui esiste.
+    /// </summary>
+    [Fact]
+    public void UnaTolleranzaPiuLargaCostaMenoNodi()
+    {
+        const int w = 120, h = 120;
+        var stretta = Nodi(0.6);
+        var larga = Nodi(4.0);
+
+        Assert.True(larga < stretta, $"tolleranza 4,0 ha dato {larga} nodi contro i {stretta} di 0,6");
+
+        int Nodi(double t)
+        {
+            var c = Contorni.Estrai(Disco(w, h, 40), null, w, h, 2,
+                                    new ParametriTracciato { Tolleranza = t });
+            return c.Archi.Sum(a => a.Cubiche.Count);
+        }
+    }
+
+    /// <summary>
+    /// Un arco dolce si descrive con **poche** curve.
+    ///
+    /// L'adattamento partiva da quattro tratti sempre, e da li' i nodi potevano solo crescere: un
+    /// cerchio, che di curve ne vuole quattro in tutto, ne riceveva quattro per ciascuno dei tratti
+    /// in cui era stato spezzato. Il tetto qui e' largo -- non si sta misurando la taratura, si sta
+    /// verificando che il minimo sia il minimo e non un numero fisso.
+    /// </summary>
+    [Fact]
+    public void UnCerchioNonCostaDecineDiCurve()
+    {
+        const int w = 200, h = 200;
+        var contorni = Contorni.Estrai(Disco(w, h, 70), null, w, h, 2,
+                                       new ParametriTracciato { Tolleranza = 2.7 });
+
+        // Il contorno del disco: l'arco che non corre sul bordo della tavola.
+        var disco = contorni.Archi
+            .Where(a => a.Inizio.X > 2 && a.Inizio.Y > 2 && a.Inizio.X < w - 2 && a.Inizio.Y < h - 2)
+            .Sum(a => a.Cubiche.Count);
+
+        Assert.InRange(disco, 1, 16);
+    }
+
+    /// <summary>
     /// Le cubiche devono davvero descrivere la forma.
     ///
     /// Un difetto vero e' passato inosservato proprio qui: un anello chiuso finiva in una sola

@@ -104,7 +104,7 @@ namespace MJ.Classifier
                 var produced = raster
                     ? PrepareRaster(originalPath, work, baseName, log)
                     : Vectorize(originalPath, work, baseName, context.FunctionAppDirectory,
-                                message.Threshold, ColoreRichiesto(message.Mode), NumeroColori(message), Unione(message), log);
+                                message.Threshold, ColoreRichiesto(message.Mode), Parametri(message), log);
 
                 // SharePoint vuole qui un percorso relativo al web ("ImagesToClassify/nome"), non
                 // uno server-relative: passandogli "/sites/Classifier/..." tenta di creare la
@@ -221,23 +221,18 @@ namespace MJ.Classifier
             return null;
         }
 
-        /// <summary>Quante tinte, entro limiti che tengono il costo sotto controllo.</summary>
-        private static int NumeroColori(VectorizeQueueMessage message)
-        {
-            var n = message.Colori ?? ColoriPredefiniti;
-            return n < 2 ? 2 : n > 32 ? 32 : n;
-        }
-
         /// <summary>
-        /// Quanto unire le tinte gemelle, entro limiti che evitano gli estremi assurdi. Null lascia
-        /// il valore misurato; zero disattiva la passata; oltre il tetto si fonderebbero colori che
-        /// l'occhio distingue benissimo.
+        /// La taratura del tracciato che arriva nel messaggio, con i limiti applicati.
+        ///
+        /// Il tetto sulle tinte resta trentadue anche se <see cref="ParametriTracciato"/> ne
+        /// ammette di piu': qui ogni tinta e' lavoro che gira in una Function a consumo, e chi
+        /// carica non vede quel costo. Il resto lo convalida <see cref="ParametriTracciato"/>.
         /// </summary>
-        private static double Unione(VectorizeQueueMessage message)
+        private static ParametriTracciato Parametri(VectorizeQueueMessage message)
         {
-            var v = message.Unione ?? Tavolozza.UnionePredefinita;
-            if (v <= 0) return 0;
-            return v > 4000 ? 4000 : v;
+            var p = message.ParametriDiTracciato();
+            if (p.NumeroColori > 32) p.NumeroColori = 32;
+            return p;
         }
 
         /// <summary>
@@ -275,7 +270,8 @@ namespace MJ.Classifier
         /// a colori ridotta a silhouette perderebbe tutto tranne la sagoma.
         /// </summary>
         private static string[] Vectorize(string originalPath, string dir, string baseName, string functionDir,
-                                          int? requestedThreshold, bool? forzaColore, int quantiColori, double unione, ILogger log)
+                                          int? requestedThreshold, bool? forzaColore,
+                                          ParametriTracciato parametri, ILogger log)
         {
             var svgPath = Path.Combine(dir, baseName + ".svg");
             var epsPath = Path.Combine(dir, baseName + ".eps");
@@ -295,7 +291,7 @@ namespace MJ.Classifier
                 var aColori = forzaColore ?? Tavolozza.HaColori(rgb, opachi: opachi);
                 if (aColori)
                 {
-                    TracciaAColori(src, rgb, opachi, svgPath, epsPath, jpgPath, quantiColori, unione, log);
+                    TracciaAColori(src, rgb, opachi, svgPath, epsPath, jpgPath, parametri, log);
                     return new[] { svgPath, epsPath, jpgPath };
                 }
 
@@ -352,22 +348,30 @@ namespace MJ.Classifier
         /// </summary>
         private static void TracciaAColori(Image<Rgb24> src, byte[] rgb, bool[] opachi,
                                            string svgPath, string epsPath,
-                                           string jpgPath, int quantiColori, double unione,
+                                           string jpgPath, ParametriTracciato parametri,
                                            ILogger log)
         {
-            var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, quantiColori, unione, opachi);
+            // I numeri arrivano riferiti a una grandezza convenzionale: qui si riportano a quella
+            // vera, altrimenti la stessa taratura darebbe due disegni diversi sullo stesso soggetto
+            // consegnato a tremila pixel e a seimila.
+            var p = parametri.PerImmagine(src.Width, src.Height);
+
+            // Il rumore si toglie **prima** di decidere quali sono le tinte: dopo, l'ondeggiamento
+            // del JPEG e' gia' diventato confine (vedi Rumore).
+            rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
+
+            var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
             // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte
             // un pixel, e ricalcarle darebbe contorni ondulati.
-            Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height);
+            Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, p.RaggioLisciatura);
             // Poi si toglie il pulviscolo. Va **dopo** la lisciatura, che nel raddrizzare i bordi
             // puo' staccare qualche granello nuovo.
-            Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height,
-                                     Tavolozza.SogliaGranelli(src.Width, src.Height));
+            Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height, p.Granelli);
             // Le sfumature si stimano sui pixel **originali**: nella mappa ridotta non ci sono piu'.
             var rampe = Sfumatura.StimaTutte(rgb, tavolozza, src.Width, src.Height);
 
             var contorni = Contorni.Estrai(tavolozza.Indici, tavolozza.Opaco,
-                                           src.Width, src.Height, tavolozza.Colori.Length);
+                                           src.Width, src.Height, tavolozza.Colori.Length, p);
             var tinte = new List<VettorialeCondiviso.Tinta>(tavolozza.Colori.Length);
             for (var i = 0; i < tavolozza.Colori.Length; i++)
                 tinte.Add(new VettorialeCondiviso.Tinta { Colore = tavolozza.Colori[i], Rampa = rampe[i] });

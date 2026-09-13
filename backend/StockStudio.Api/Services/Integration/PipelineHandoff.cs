@@ -48,7 +48,8 @@ public class PipelineHandoff
     public bool Enabled => !string.IsNullOrWhiteSpace(_s.StorageConnectionString);
 
     public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, int? threshold,
-                                                  int? colori, double? unione, CancellationToken ct)
+                                                  int? colori, double? unione,
+                                                  ParametriTracciato? tracciato, CancellationToken ct)
     {
         if (!Enabled)
             throw new InvalidOperationException(
@@ -88,6 +89,9 @@ public class PipelineHandoff
             // Zero e' una scelta legittima -- "non unire niente" -- quindi passa; solo i valori
             // assurdi diventano "nessuna preferenza".
             Unione = unione is >= 0 and <= 4000 ? unione : null,
+            // Il resto della taratura viaggia gia' convalidato: la Function riceve numeri dentro i
+            // limiti in cui hanno senso, e non deve fidarsi di chi ha compilato il modulo.
+            Tracciato = tracciato?.Convalidato(),
         }.ToString(), ct);
 
         _log.LogInformation("Consegnato alla pipeline: {File} come {Blob}", fileName, blobName);

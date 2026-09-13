@@ -967,19 +967,22 @@ namespace StockStudio.Shared.Vettoriale
         /// e' ancora una partizione -- ogni pixel appartiene a una tinta e a una sola -- quindi le
         /// zone continuano a combaciare esattamente.
         ///
-        /// ## Perche' il raggio e' uno
+        /// ## Perche' il raggio di serie e' uno
         /// Perche' e' alto un pixel il difetto da togliere. Provato anche due: le linee escono un
         /// filo piu' morbide, ma gli angoli netti si smussano visibilmente -- e uno spigolo di una
         /// lettera e' forma, non rumore. Sopra il raggio uno si smette di togliere la scalinata e si
-        /// comincia a togliere il disegno.
+        /// comincia a togliere il disegno. Resta comunque regolabile, perche' su un'illustrazione
+        /// senza spigoli netti il raggio due conviene.
         ///
         /// Misurato sull'illustrazione da 8 megapixel: l'SVG scende da 216 a 206 KB e i contorni
         /// ingranditi diventano curve continue invece che ondulate.
         /// </summary>
-        public static void LisciaPerTracciato(Esito esito, int larghezza, int altezza)
+        /// <param name="raggio">Quanto si sfoca l'appartenenza. Zero salta la passata.</param>
+        public static void LisciaPerTracciato(Esito esito, int larghezza, int altezza, int raggio = RaggioLisciatura)
         {
             if (esito == null || esito.Colori.Length < 2) return;
             if (larghezza < 3 || altezza < 3) return;
+            if (raggio < 1) return;
 
             var indici = esito.Indici;
             var opaco = esito.Opaco;
@@ -997,8 +1000,8 @@ namespace StockStudio.Shared.Vettoriale
                     indicatore[i] = indici[i] == c && (opaco.Length == 0 || opaco[i]) ? (byte)255 : (byte)0;
                 // Due passate di media mobile: una sola lascerebbe un profilo a spigoli, due
                 // approssimano una campana e danno una rampa liscia.
-                var sfocato = Media(Media(indicatore, larghezza, altezza, RaggioLisciatura),
-                                    larghezza, altezza, RaggioLisciatura);
+                var sfocato = Media(Media(indicatore, larghezza, altezza, raggio),
+                                    larghezza, altezza, raggio);
                 for (var i = 0; i < indici.Length; i++)
                 {
                     if (opaco.Length != 0 && !opaco[i]) continue;
@@ -1022,8 +1025,8 @@ namespace StockStudio.Shared.Vettoriale
             for (var i = 0; i < quante; i++) esito.Colori[i].Pixel = conteggi[i];
         }
 
-        /// <summary>Quanto si sfoca l'appartenenza: vedi <see cref="LisciaPerTracciato"/>.</summary>
-        private const int RaggioLisciatura = 1;
+        /// <summary>Quanto si sfoca l'appartenenza di serie: vedi <see cref="LisciaPerTracciato"/>.</summary>
+        public const int RaggioLisciatura = 1;
 
         /// <summary>Media mobile separabile su una finestra quadrata di lato 2r+1.</summary>
         private static byte[] Media(byte[] campo, int larghezza, int altezza, int raggio)
@@ -1087,7 +1090,11 @@ namespace StockStudio.Shared.Vettoriale
         /// Una macchia isolata nel trasparente non ha con chi fondersi e resta dov'e': li' non e'
         /// pulviscolo, e' l'unico disegno che c'e'.
         /// </summary>
-        /// <param name="soglia">Sotto quanti pixel una macchia e' rumore: vedi <see cref="SogliaGranelli"/>.</param>
+        /// <param name="soglia">
+        /// Sotto quanti pixel una macchia e' rumore invece che un dettaglio. Zero, o qualunque
+        /// valore sotto due, non ne toglie nessuna. La misura si sceglie in
+        /// <see cref="ParametriTracciato.Granelli"/>, che la riporta alla grandezza dell'immagine.
+        /// </param>
         public static void TogliIGranelli(Esito esito, int larghezza, int altezza, int soglia)
         {
             if (esito == null || esito.Colori.Length < 2 || soglia < 2) return;
@@ -1208,19 +1215,6 @@ namespace StockStudio.Shared.Vettoriale
             if (indici[i] != vincitrice) return false;
             quale = macchia[i];
             return true;
-        }
-
-        /// <summary>
-        /// Sotto quanti pixel una macchia e' rumore invece che un dettaglio.
-        ///
-        /// Si scala con l'immagine perche' "piccolo" dipende da quanto e' grande il foglio: venti
-        /// pixel sono un granello su quattro megapixel e un dettaglio su un francobollo. E' la
-        /// stessa misura che si dava a potrace quando era lui a scartarli.
-        /// </summary>
-        public static int SogliaGranelli(int larghezza, int altezza)
-        {
-            var n = (long)larghezza * altezza / 90000;
-            return n < 4 ? 4 : n > 60 ? 60 : (int)n;
         }
 
         /// <summary>

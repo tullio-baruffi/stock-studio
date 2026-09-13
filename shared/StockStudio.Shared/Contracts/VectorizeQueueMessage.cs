@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using StockStudio.Shared.Vettoriale;
 
 namespace StockStudio.Shared.Contracts
 {
@@ -42,6 +43,28 @@ namespace StockStudio.Shared.Contracts
         /// disegni consegnati nello stesso minuto possono volerne due valori diversi.
         /// </summary>
         public double? Unione { get; set; }
+
+        /// <summary>
+        /// Come disegnare i contorni: quanto rumore togliere, quanto lisciare, con quanta fedelta'
+        /// ridurre a curve. Null lascia la taratura di serie.
+        ///
+        /// Vale per questo messaggio lo stesso motivo di <see cref="Unione"/>: sono scelte che si
+        /// fanno guardando il disegno. <see cref="Colori"/> e <see cref="Unione"/> restano campi a
+        /// se' perche' c'erano gia' e ci sono messaggi in coda che li usano; quando sono valorizzati
+        /// vincono loro, cosi' un messaggio vecchio continua a voler dire quel che voleva dire.
+        /// </summary>
+        public ParametriTracciato? Tracciato { get; set; }
+
+        /// <summary>
+        /// I parametri completi del tracciato, tenendo conto dei due campi storici.
+        /// </summary>
+        public ParametriTracciato ParametriDiTracciato()
+        {
+            var p = Tracciato ?? ParametriTracciato.Predefiniti;
+            if (Colori.HasValue) p.NumeroColori = Colori.Value;
+            if (Unione.HasValue) p.SogliaUnione = Unione.Value;
+            return p.Convalidato();
+        }
 
         /// <summary>
         /// Luminance cut, 0-255, chosen by the author while looking at the preview in the browser.

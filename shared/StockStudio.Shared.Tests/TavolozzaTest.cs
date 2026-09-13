@@ -101,15 +101,6 @@ public class TavolozzaTest
         Assert.Equal(9, Quanti(e, 1));
     }
 
-    /// <summary>La soglia scala con l'immagine, ma resta dentro limiti sensati.</summary>
-    [Theory]
-    [InlineData(100, 100, 4)]        // francobollo: il minimo
-    [InlineData(3840, 2160, 60)]     // otto megapixel: il massimo
-    public void LaSogliaDeiGranelliScalaEResta(int w, int h, int atteso)
-    {
-        Assert.Equal(atteso, Tavolozza.SogliaGranelli(w, h));
-    }
-
     // ---- Colori o bianco e nero --------------------------------------------------------------
 
     /// <summary>

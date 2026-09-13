@@ -55,8 +55,7 @@ public partial class OpenSourceVectorizer : IVectorizer
             if (aColori)
             {
                 await TracciaAColoriAsync(src, rgb, opachi, svgPath, epsPath, jpgPath,
-                                          overrides?.NumeroColori ?? _opt.NumeroColori,
-                                          overrides?.SogliaUnione ?? _opt.SogliaUnione, ct);
+                                          overrides?.Tracciato ?? _opt.Tracciato, ct);
                 return new VectorResult(
                     File.Exists(svgPath) ? Path.GetFileName(svgPath) : null,
                     File.Exists(epsPath) ? Path.GetFileName(epsPath) : null,
@@ -117,24 +116,32 @@ public partial class OpenSourceVectorizer : IVectorizer
     /// venderebbe peggio dell'originale senza alcun vantaggio.
     /// </summary>
     private async Task TracciaAColoriAsync(Image<Rgb24> src, byte[] rgb, bool[] opachi,
-                                           string svgPath, string epsPath,
-                                           string jpgPath, int quantiColori, double sogliaUnione,
-                                           CancellationToken ct)
+                                           string svgPath, string epsPath, string jpgPath,
+                                           ParametriTracciato parametri, CancellationToken ct)
     {
-        var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, quantiColori, sogliaUnione, opachi);
+        // I numeri arrivano riferiti a una grandezza convenzionale: qui si riportano a quella vera,
+        // altrimenti la stessa taratura darebbe due disegni diversi sullo stesso soggetto
+        // consegnato a tremila pixel e a seimila.
+        var p = parametri.PerImmagine(src.Width, src.Height);
+
+        // Il rumore si toglie **prima** di decidere quali sono le tinte: dopo, l'ondeggiamento del
+        // JPEG e' gia' diventato confine, e nessuna lisciatura a valle lo puo' piu' distinguere dal
+        // disegno. Vedi Rumore.
+        rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
+
+        var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
         // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte un
         // pixel, e ricalcarle darebbe contorni ondulati.
-        Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height);
+        Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, p.RaggioLisciatura);
         // Poi si toglie il pulviscolo. Va **dopo** la lisciatura, che nel raddrizzare i bordi puo'
         // staccare qualche granello nuovo -- misurato: invertendo l'ordine ne restavano il triplo.
-        Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height,
-                                 Tavolozza.SogliaGranelli(src.Width, src.Height));
+        Tavolozza.TogliIGranelli(tavolozza, src.Width, src.Height, p.Granelli);
         // Le sfumature si stimano sui pixel **originali**: nella mappa ridotta non ci sono piu'.
         var rampe = Sfumatura.StimaTutte(rgb, tavolozza, src.Width, src.Height);
 
         ct.ThrowIfCancellationRequested();
         var contorni = Contorni.Estrai(tavolozza.Indici, tavolozza.Opaco,
-                                       src.Width, src.Height, tavolozza.Colori.Length);
+                                       src.Width, src.Height, tavolozza.Colori.Length, p);
         var tinte = new List<VettorialeCondiviso.Tinta>(tavolozza.Colori.Length);
         for (var i = 0; i < tavolozza.Colori.Length; i++)
             tinte.Add(new VettorialeCondiviso.Tinta { Colore = tavolozza.Colori[i], Rampa = rampe[i] });
