@@ -46,6 +46,12 @@ namespace MJ.Classifier
         const string OriginalsContainer = "originals-to-vectorize";
         const string ConnectionName = "rgclassifier8f3e_STORAGE";
 
+        /// <summary>
+        /// Dove restano gli originali dopo il tracciato, dentro lo stesso contenitore.
+        /// Il backoffice cerca qui quando deve ritracciare: vedi RivettorializzaOneAsync.
+        /// </summary>
+        public const string PrefissoConservati = "conservati/";
+
         /// <summary>Longest edge of the JPEG deliverable. Matches what the web application produced.</summary>
         const int JpegLongEdge = 4000;
         const int JpegQuality = 92;
@@ -136,8 +142,34 @@ namespace MJ.Classifier
                 await classifyQueue.SendMessageAsync(classify.ToString());
                 log.LogInformation($"Accodato per la classificazione: item {classifyTarget.itemId}");
 
-                // L'originale ha esaurito il suo scopo: resta su SharePoint, non serve pagarne
-                // due copie.
+                // L'originale non si butta: e' l'unica copia mai compressa che esista, e ogni
+                // ritracciamento futuro deve ripartire da li'. Quel che resta su SharePoint e'
+                // un JPEG a qualita' 92, quindi ritracciare da quello vorrebbe dire ricalcare i
+                // difetti della compressione invece del disegno.
+                //
+                // Si conserva nello stesso contenitore sotto un prefisso, con il nome della
+                // cartella che l'immagine ha su SharePoint: e' l'unica chiave che il backoffice
+                // sa ricostruire partendo da un file della libreria.
+                //
+                // Se non riesce non si alza un'eccezione: a questo punto i file sono gia' su
+                // SharePoint e rilanciare farebbe ritentare la coda, che li caricherebbe una
+                // seconda volta. Un originale non archiviato costa un ritracciamento peggiore;
+                // un doppione in libreria costa la revisione a mano.
+                try
+                {
+                    var conservato = originals.GetBlobClient(
+                        PrefissoConservati + baseName + Path.GetExtension(message.BlobName));
+                    using var copia = File.OpenRead(originalPath);
+                    await conservato.UploadAsync(copia, overwrite: true);
+                    log.LogInformation($"Originale conservato come {conservato.Name}");
+                }
+                catch (Exception ex)
+                {
+                    log.LogWarning(ex, $"Originale non conservato per {baseName}: i ritracciamenti " +
+                                        "futuri dovranno ripartire dal JPEG di consegna.");
+                }
+
+                // La copia di lavoro invece ha esaurito il suo scopo.
                 await blob.DeleteIfExistsAsync();
                 log.LogInformation("Vettorializzazione completata");
             }

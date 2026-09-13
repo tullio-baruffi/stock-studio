@@ -25,6 +25,13 @@ public class PipelineHandoff
 {
     private const string OriginalsContainer = "originals-to-vectorize";
 
+    /// <summary>
+    /// Dove la Function conserva gli originali dopo il tracciato. Deve restare uguale a
+    /// VectorizeImage.PrefissoConservati: sono due progetti che non si vedono fra loro, e l'unico
+    /// legame e' questa stringa.
+    /// </summary>
+    private const string PrefissoConservati = "conservati/";
+
     /// <summary>Queue the durable path starts from. Public so the monitoring can watch it by name.</summary>
     public const string VectorizeQueue = "images-to-vectorize";
 
@@ -85,5 +92,43 @@ public class PipelineHandoff
 
         _log.LogInformation("Consegnato alla pipeline: {File} come {Blob}", fileName, blobName);
         return new HandoffResult(blobName, fileName);
+    }
+
+    /// <summary>
+    /// L'originale conservato di un'immagine, se c'e'.
+    ///
+    /// ## Perche' esiste
+    /// Su SharePoint, di un'immagine tracciata, restano un SVG, un EPS e un JPEG a qualita' 92
+    /// lungo al massimo 4000 pixel. Nessuno dei tre e' l'originale. Ritracciare dal JPEG vuol dire
+    /// ricalcare gli artefatti della compressione -- gli aloni attorno alle linee nere, il
+    /// pulviscolo sul bianco -- e consegnarli come se fossero disegno.
+    ///
+    /// Torna null per le immagini tracciate prima che gli originali si conservassero: quelle si
+    /// ritracciano dal JPEG, che e' il meglio che ne resti, e chi guarda deve poterlo sapere.
+    /// </summary>
+    /// <param name="baseName">Il nome della cartella su SharePoint, che e' anche quello del file.</param>
+    public async Task<(Stream Contenuto, string Nome)?> OriginaleAsync(string baseName, CancellationToken ct)
+    {
+        if (!Enabled || string.IsNullOrWhiteSpace(baseName)) return null;
+
+        var container = new BlobContainerClient(_s.StorageConnectionString, OriginalsContainer);
+        if (!await container.ExistsAsync(ct)) return null;
+
+        // L'estensione non e' nota: si prova quella che l'originale poteva avere. Sono poche, e
+        // una chiamata che trova subito costa quanto una che non trova.
+        foreach (var ext in new[] { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff" })
+        {
+            var blob = container.GetBlobClient(PrefissoConservati + baseName + ext);
+            if (!await blob.ExistsAsync(ct)) continue;
+
+            var memoria = new MemoryStream();
+            await blob.DownloadToAsync(memoria, ct);
+            memoria.Position = 0;
+            _log.LogInformation("Originale conservato trovato per {Base}: {Nome}", baseName, blob.Name);
+            return (memoria, baseName + ext);
+        }
+
+        _log.LogInformation("Nessun originale conservato per {Base}", baseName);
+        return null;
     }
 }

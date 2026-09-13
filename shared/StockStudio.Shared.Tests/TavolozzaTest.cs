@@ -202,4 +202,56 @@ public class TrasparenzaTest
         Assert.False(Trasparenza.CeTrasparenza(new[] { true, true }));
         Assert.True(Trasparenza.CeTrasparenza(new[] { true, false }));
     }
+
+    /// <summary>
+    /// Un'illustrazione su fondo bianco con una figura scura, come ne arrivano davvero: il bordo
+    /// della figura porta una frangia di pixel intermedi, che e' antialiasing piu' compressione.
+    /// </summary>
+    private static byte[] FiguraSuFondo(int w, int h, byte fondo, byte figura)
+    {
+        var rgb = new byte[w * h * 3];
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                // Dentro la figura, sulla sua frangia, o sul fondo.
+                var dentro = x >= w / 4 && x < w * 3 / 4 && y >= h / 4 && y < h * 3 / 4;
+                var frangia = !dentro
+                           && x >= w / 4 - 1 && x < w * 3 / 4 + 1
+                           && y >= h / 4 - 1 && y < h * 3 / 4 + 1;
+                var v = dentro ? figura : frangia ? (byte)((fondo + figura) / 2) : fondo;
+                var p = (y * w + x) * 3;
+                rgb[p] = rgb[p + 1] = rgb[p + 2] = v;
+            }
+        return rgb;
+    }
+
+    /// <summary>
+    /// Le tinte devono valere quel che vale l'originale.
+    ///
+    /// L'istogramma raggruppa i colori in caselle da otto livelli, e finche' ogni casella veniva
+    /// riassunta dal suo **angolo basso** ogni tinta usciva fino a sette livelli piu' scura: il
+    /// bianco pieno 255 diventava 248, cioe' #f8f8f8, e su un fondo bianco si vedeva. La
+    /// distorsione era sistematica e in una sola direzione, quindi valeva per ogni immagine.
+    ///
+    /// Misurato sull'illustrazione degli orsi: fondo #fefefe reso #f8f8f8, pelliccia #62473c resa
+    /// #533d33. Non e' un dettaglio da pignoli: e' il colore che il cliente compra.
+    /// </summary>
+    [Fact]
+    public void LeTinteNonEsconoPiuScureDellOriginale()
+    {
+        const int W = 64, H = 64;
+        var rgb = FiguraSuFondo(W, H, fondo: 255, figura: 20);
+
+        var esito = Tavolozza.Riduci(rgb, W, H, quanti: 4);
+
+        // La tinta del fondo e' quella dell'angolo, che fondo lo e' di sicuro.
+        var fondo = esito.Colori[esito.Indici[0]];
+        Assert.InRange(fondo.R, 250, 255);
+        Assert.InRange(fondo.G, 250, 255);
+        Assert.InRange(fondo.B, 250, 255);
+
+        // E la figura non deve schiarirsi per compensare.
+        var centro = esito.Colori[esito.Indici[(H / 2) * W + (W / 2)]];
+        Assert.InRange(centro.R, 15, 25);
+    }
 }

@@ -37,13 +37,21 @@ public record RivettorializzaResult(
     string? error = null,
     /// <summary>Quali consegne sono state riscritte, con il peso vecchio e nuovo.</summary>
     IReadOnlyList<ConsegnaRiscritta>? consegne = null,
-    /// <summary>Vero se il tracciato è avvenuto a colori, falso se in bianco e nero.</summary>
+    /// <summary>
+    /// Vero se il tracciato è avvenuto a colori, falso se in bianco e nero.
+    /// </summary>
     bool aColori = false,
     /// <summary>
     /// Vero quando l'immagine è già su Adobe: il file nuovo vive qui, non là.
     /// Per i contributor non esiste un'API, quindi il ricarico sul portale resta a mano.
     /// </summary>
-    bool daRiportare = false);
+    bool daRiportare = false,
+    /// <summary>
+    /// Da dove sono stati ricavati i tracciati: "originale" quando si è ripartiti dal file
+    /// caricato, "jpeg" quando quello non c'era più e si è dovuto ricalcare il JPEG di consegna.
+    /// Chi guarda il risultato deve sapere da cosa è stato ottenuto.
+    /// </summary>
+    string sorgente = "jpeg");
 
 public record ConsegnaRiscritta(string tipo, string fileName, int kbPrima, int kbDopo);
 
@@ -90,6 +98,7 @@ public class BackofficeController : ControllerBase
     private readonly PunteggioStore _punteggi;
     private readonly Punteggiatore _punteggiatore;
     private readonly QueueDispatcher _queue;
+    private readonly PipelineHandoff _handoff;
     private readonly ILogger<BackofficeController> _log;
 
     public BackofficeController(SharePointStore sp, IOptions<PipelineSettings> s,
@@ -98,6 +107,7 @@ public class BackofficeController : ControllerBase
                                 MetadataFeedbackStore feedback, PunteggioStore punteggi,
                                 Punteggiatore punteggiatore,
                                 QueueDispatcher queue,
+                                PipelineHandoff handoff,
                                 ILogger<BackofficeController> log)
     {
         _sp = sp;
@@ -109,6 +119,7 @@ public class BackofficeController : ControllerBase
         _punteggi = punteggi;
         _punteggiatore = punteggiatore;
         _queue = queue;
+        _handoff = handoff;
         _log = log;
     }
 
@@ -989,8 +1000,27 @@ public class BackofficeController : ControllerBase
             // Nome di lavoro neutro: i nomi veri arrivano da SharePoint e contengono puntini di
             // sospensione e altri caratteri che su disco è inutile far viaggiare. I file si
             // ricaricano poi con il nome del fratello che sostituiscono, non con questo.
-            var sorgente = Path.Combine(lavoro, "sorgente" + Path.GetExtension(carrier.FileName));
-            await System.IO.File.WriteAllBytesAsync(sorgente, _sp.DownloadFile(carrier.ServerRelativeUrl), ct);
+            //
+            // Da dove si parte conta più di ogni altro parametro del tracciato: il JPEG accanto
+            // all'immagine è compresso a qualità 92 e ridotto a 4000 pixel, quindi ricalcarlo
+            // significa tracciare anche gli aloni della compressione. L'originale, quando c'è,
+            // non è mai stato compresso.
+            var conservato = await _handoff.OriginaleAsync(CartellaDi(carrier.ServerRelativeUrl), ct);
+            var daOriginale = conservato != null;
+
+            var sorgente = Path.Combine(lavoro,
+                "sorgente" + Path.GetExtension(daOriginale ? conservato!.Value.Nome : carrier.FileName));
+
+            if (daOriginale)
+            {
+                using var destinazione = System.IO.File.Create(sorgente);
+                await conservato!.Value.Contenuto.CopyToAsync(destinazione, ct);
+                await conservato.Value.Contenuto.DisposeAsync();
+            }
+            else
+            {
+                await System.IO.File.WriteAllBytesAsync(sorgente, _sp.DownloadFile(carrier.ServerRelativeUrl), ct);
+            }
 
             var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct);
 
@@ -1033,13 +1063,15 @@ public class BackofficeController : ControllerBase
                 return new RivettorializzaResult(false, id, carrier.FileName,
                     "Il tracciato non ha prodotto file: controlla i log del vettorizzatore.");
 
-            _log.LogInformation("Rivettorializzate {Quante} consegne di {File}", riscritte.Count, carrier.FileName);
+            _log.LogInformation("Rivettorializzate {Quante} consegne di {File} partendo da {Sorgente}",
+                                riscritte.Count, carrier.FileName, daOriginale ? "originale" : "JPEG di consegna");
 
             return new RivettorializzaResult(
                 true, id, carrier.FileName,
                 consegne: riscritte,
                 aColori: vr.AColori ?? false,
-                daRiportare: carrier.Inviato);
+                daRiportare: carrier.Inviato,
+                sorgente: daOriginale ? "originale" : "jpeg");
         }
         finally
         {
@@ -1200,6 +1232,22 @@ public class BackofficeController : ControllerBase
     /// vuole un margine, perche' i file di una stessa generazione si scrivono a pochi secondi
     /// l'uno dall'altro e non vanno segnalati.
     /// </summary>
+    /// <summary>
+    /// Il nome della cartella che contiene un file di libreria, che è anche la chiave con cui
+    /// l'originale è stato conservato.
+    ///
+    /// Ogni immagine vettorizzata vive in una sottocartella intitolata al suo nome, e i tre file
+    /// stanno dentro. Un'immagine senza tracciati invece sta nella radice della libreria: lì non
+    /// c'è nessuna cartella, e nessun originale da cercare.
+    /// </summary>
+    private static string CartellaDi(string serverRelativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(serverRelativeUrl)) return string.Empty;
+        var pezzi = serverRelativeUrl.Trim('/').Split('/');
+        // .../<libreria>/<cartella>/<file>: servono almeno quattro pezzi perché una cartella ci sia.
+        return pezzi.Length >= 4 ? pezzi[pezzi.Length - 2] : string.Empty;
+    }
+
     private static bool PiuRecenteDi(SharePointItem consegna, SharePointItem portatore)
     {
         if (consegna.Id == portatore.Id) return false;

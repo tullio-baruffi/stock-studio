@@ -301,9 +301,9 @@ namespace StockStudio.Shared.Vettoriale
             var perChiave = new Dictionary<int, byte>(istogramma.Count);
             foreach (var chiave in istogramma.Keys)
             {
-                var r = ((chiave >> (Bit * 2)) & (Livelli - 1)) << Scarto;
-                var g = ((chiave >> Bit) & (Livelli - 1)) << Scarto;
-                var b = (chiave & (Livelli - 1)) << Scarto;
+                var r = Centro((chiave >> (Bit * 2)) & (Livelli - 1));
+                var g = Centro((chiave >> Bit) & (Livelli - 1));
+                var b = Centro(chiave & (Livelli - 1));
 
                 byte migliore = 0;
                 var minimo = double.MaxValue;
@@ -335,6 +335,10 @@ namespace StockStudio.Shared.Vettoriale
             colori = TogliNastriIntermedi(colori, indici, opachi, larghezza, altezza, pixel);
 
             var opaco = opachi ?? TuttiOpachi(pixel);
+
+            // L'ultima parola sul colore la danno i pixel veri, non le caselle dell'istogramma.
+            AffinaSuiPixelVeri(colori, indici, rgb, suBordo, opaco, pixel);
+
             // I pixel trasparenti non si contano: non appartengono a nessuna tinta, e sommarli
             // gonfierebbe proprio la tinta che il trasparente ha per caso sotto di se'.
             var conteggi = new int[colori.Length];
@@ -342,6 +346,63 @@ namespace StockStudio.Shared.Vettoriale
             for (var i = 0; i < colori.Length; i++) colori[i].Pixel = conteggi[i];
 
             return new Esito { Colori = colori, Indici = indici, SuBordo = suBordo, Opaco = opaco };
+        }
+
+        /// <summary>
+        /// L'ultima parola sul colore di ogni tinta: la media dei pixel veri che le sono toccati.
+        ///
+        /// ## Perche' serve, dopo tutto il resto
+        /// Fin qui i colori vengono dalle caselle dell'istogramma, che raggruppano otto livelli per
+        /// canale: qualunque cosa si faccia, il risultato e' arrotondato alla casella. Il taglio
+        /// mediano e Lloyd scelgono **quali** tinte, e lo fanno bene; ma il valore preciso di
+        /// ciascuna resta quello di una scatola, non quello dei pixel.
+        ///
+        /// Qui la scelta e' gia' fatta e ogni pixel sa a quale tinta appartiene: a quel punto il
+        /// colore giusto non e' una stima, e' una media che si puo' calcolare esattamente.
+        ///
+        /// ## Perche' i pixel di frangia restano fuori
+        /// Sono mescolanze fra due tinte (vedi PixelDiBordo). Contarli tirerebbe ogni campitura
+        /// verso il colore di chi le sta accanto -- e siccome quasi ogni campitura confina con la
+        /// linea nera del disegno, il risultato sarebbe che tutto si scurisce un po'. E' esattamente
+        /// il difetto che si voleva togliere.
+        /// </summary>
+        private static void AffinaSuiPixelVeri(Colore[] colori, byte[] indici, byte[] rgb,
+                                               bool[] suBordo, bool[] opaco, int pixel)
+        {
+            var n = colori.Length;
+            if (n == 0) return;
+
+            var sr = new long[n];
+            var sg = new long[n];
+            var sb = new long[n];
+            var quanti = new long[n];
+
+            for (var i = 0; i < pixel; i++)
+            {
+                if (!opaco[i] || suBordo[i]) continue;
+                int t = indici[i];
+                if (t >= n) continue;
+                var p = i * 3;
+                sr[t] += rgb[p];
+                sg[t] += rgb[p + 1];
+                sb[t] += rgb[p + 2];
+                quanti[t]++;
+            }
+
+            // Sotto una manciata di pixel la media e' un'opinione, non una misura: una tinta con
+            // quattro pixel interni si sposterebbe dove capita. Meglio lasciarla dove il taglio
+            // mediano l'aveva messa.
+            const int Minimo = 24;
+
+            for (var t = 0; t < n; t++)
+            {
+                if (quanti[t] < Minimo) continue;
+                colori[t] = new Colore(
+                    (byte)((sr[t] + quanti[t] / 2) / quanti[t]),
+                    (byte)((sg[t] + quanti[t] / 2) / quanti[t]),
+                    (byte)((sb[t] + quanti[t] / 2) / quanti[t]),
+                    colori[t].Pixel);
+            }
         }
 
         private static bool[] TuttiOpachi(int pixel)
@@ -1307,9 +1368,9 @@ namespace StockStudio.Shared.Vettoriale
             byte gia;
             if (cache.TryGetValue(chiave, out gia)) return gia;
 
-            var r = ((chiave >> (Bit * 2)) & (Livelli - 1)) << Scarto;
-            var g = ((chiave >> Bit) & (Livelli - 1)) << Scarto;
-            var b = (chiave & (Livelli - 1)) << Scarto;
+            var r = Centro((chiave >> (Bit * 2)) & (Livelli - 1));
+            var g = Centro((chiave >> Bit) & (Livelli - 1));
+            var b = Centro(chiave & (Livelli - 1));
 
             byte migliore = 0;
             var minimo = double.MaxValue;
@@ -1629,13 +1690,27 @@ namespace StockStudio.Shared.Vettoriale
             return dr * dr + dg * dg + db * db;
         }
 
+        /// <summary>
+        /// Il livello di colore al centro della casella d'istogramma che lo contiene.
+        ///
+        /// La casella raccoglie otto livelli contigui. Riassumerla con il suo **angolo basso** --
+        /// che e' quel che faceva il semplice spostamento a sinistra -- sposta ogni colore verso il
+        /// basso da zero a sette livelli, sempre nella stessa direzione: una distorsione
+        /// sistematica, non un arrotondamento. Sul bianco pieno si vedeva a occhio nudo, perche'
+        /// 255 usciva 248.
+        /// </summary>
+        private static int Centro(int livello)
+        {
+            return (livello << Scarto) | (1 << (Scarto - 1));
+        }
+
         /// <summary>Il colore al centro di una casella dell'istogramma.</summary>
         private static Colore DaChiave(int chiave)
         {
             return new Colore(
-                (byte)(((chiave >> (Bit * 2)) & (Livelli - 1)) << Scarto),
-                (byte)(((chiave >> Bit) & (Livelli - 1)) << Scarto),
-                (byte)((chiave & (Livelli - 1)) << Scarto), 0);
+                (byte)Centro((chiave >> (Bit * 2)) & (Livelli - 1)),
+                (byte)Centro((chiave >> Bit) & (Livelli - 1)),
+                (byte)Centro(chiave & (Livelli - 1)), 0);
         }
 
         /// <summary>
@@ -1665,9 +1740,9 @@ namespace StockStudio.Shared.Vettoriale
                 {
                     var chiave = kv.Key;
                     var q = kv.Value;
-                    double r = ((chiave >> (Bit * 2)) & (Livelli - 1)) << Scarto;
-                    double g = ((chiave >> Bit) & (Livelli - 1)) << Scarto;
-                    double b = (chiave & (Livelli - 1)) << Scarto;
+                    double r = Centro((chiave >> (Bit * 2)) & (Livelli - 1));
+                    double g = Centro((chiave >> Bit) & (Livelli - 1));
+                    double b = Centro(chiave & (Livelli - 1));
 
                     var migliore = 0;
                     var minimo = double.MaxValue;
@@ -1797,9 +1872,9 @@ namespace StockStudio.Shared.Vettoriale
                 foreach (var k in _chiavi)
                 {
                     var q = _conteggi[k];
-                    r += (((k >> (Bit * 2)) & (Livelli - 1)) << Scarto) * (double)q;
-                    g += (((k >> Bit) & (Livelli - 1)) << Scarto) * (double)q;
-                    b += ((k & (Livelli - 1)) << Scarto) * (double)q;
+                    r += Centro((k >> (Bit * 2)) & (Livelli - 1)) * (double)q;
+                    g += Centro((k >> Bit) & (Livelli - 1)) * (double)q;
+                    b += Centro(k & (Livelli - 1)) * (double)q;
                     n += q;
                 }
                 if (n == 0) return new Colore(0, 0, 0, 0);
