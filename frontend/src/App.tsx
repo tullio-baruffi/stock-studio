@@ -6,6 +6,7 @@ import SystemView from "./views/SystemView";
 import PipelineView from "./views/PipelineView";
 import TrendsView from "./views/TrendsView";
 import GuideView from "./views/GuideView";
+import TracciatoView from "./views/TracciatoView";
 import ConfigurationView from "./views/ConfigurationView";
 import BackofficeView from "./views/BackofficeView";
 import RevisioneView from "./views/RevisioneView";
@@ -21,7 +22,7 @@ import ExperienceToggle from "./components/ExperienceToggle";
 import BarraStato from "./components/BarraStato";
 import { esperienzaCorrente } from "./experience";
 
-type Tab = "upload" | "monitor" | "system" | "configuration" | "pipeline" | "trends" | "guide" | "backoffice" | "sales" | "insights" | "bonifica" | "consigli" | "strategy" | "tune";
+type Tab = "upload" | "monitor" | "system" | "configuration" | "pipeline" | "trends" | "guide" | "tracciato" | "backoffice" | "sales" | "insights" | "bonifica" | "consigli" | "strategy" | "tune";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "upload", label: "Carica", icon: "⬆" },
@@ -38,6 +39,9 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "system", label: "Sistema", icon: "🩺" },
   { key: "configuration", label: "Configurazione", icon: "⚙" },
   { key: "guide", label: "Guida", icon: "📖" },
+  // Sta accanto alla Guida e non accanto a Carica di proposito: e' materiale di consultazione, si
+  // apre quando un disegno e' venuto male, non a ogni caricamento.
+  { key: "tracciato", label: "Tracciato", icon: "◈" },
 ];
 
 /** Past this many unprocessed corrections the reminder stops being a hint and becomes advice. */
@@ -180,6 +184,7 @@ export default function App() {
         {tab === "system" && <SystemView />}
         {tab === "configuration" && <ConfigurationView />}
         {tab === "guide" && <GuideView />}
+        {tab === "tracciato" && <TracciatoView />}
       </main>
 
       {esperienza === "nastro" && <BarraStato />}

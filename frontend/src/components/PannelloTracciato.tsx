@@ -124,7 +124,8 @@ export default function PannelloTracciato({
             ? "Taratura di serie."
             : `${spostati} ${spostati === 1 ? "parametro spostato" : "parametri spostati"}.`}
           {" "}Le misure in pixel valgono su un lato lungo di {config.riferimento} px e si
-          adattano da sole alla grandezza vera dell'immagine.
+          adattano da sole alla grandezza vera dell'immagine. Ogni numero è spiegato con esempi
+          nella scheda <strong>Tracciato</strong>.
         </span>
       </div>
     </div>

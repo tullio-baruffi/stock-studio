@@ -537,6 +537,43 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 /* La finestra del ritracciamento mostra tutti i campi, e quella normale è troppo stretta. */
 .modal.tracciato-modale { max-width: 720px; }
 
+/*
+  La guida ai parametri. Le strisce d'esempio sono larghe e vanno lette da sinistra a destra:
+  su schermo stretto si scorrono invece di rimpicciolirsi, perché ridotte non direbbero più niente.
+*/
+.tracciato-guida .tracciato-voce h2 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.tracciato-predef {
+  font-size: 12px; font-weight: 500; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+}
+.tracciato-cosa { font-size: 15px; margin: 0 0 14px; }
+.tracciato-figura { margin: 0 0 14px; }
+.tracciato-figura img {
+  width: 100%; min-width: 720px; height: auto; display: block;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
+/* Il contenitore scorre, l'immagine no: sotto una certa larghezza il confronto va perso. */
+.tracciato-figura { overflow-x: auto; }
+.tracciato-figura figcaption {
+  color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px; max-width: 900px;
+}
+.tracciato-quando {
+  border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; margin: 0 0 12px;
+}
+.tracciato-quando p { margin: 4px 0; line-height: 1.6; }
+.tracciato-guida .guide-sec p { max-width: 900px; }
+/*
+  La tabella dei sintomi si legge in coppie, e la regola generale (.guide-table td:nth-child(2))
+  stringe e centra la seconda colonna: su due colonne di testo questo le allontana proprio dove
+  l'occhio deve accoppiarle. Stessa specificita' della regola generale piu' un elemento, cosi'
+  vince senza dipendere dall'ordine dei file.
+*/
+.tracciato-guida .guide-table { max-width: 900px; }
+.tracciato-guida .guide-table td:nth-child(2),
+.tracciato-guida .guide-table th:nth-child(2) {
+  width: auto; white-space: normal; text-align: left;
+}
+
 /* Job actions */
 .jobactions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .btn.danger { border-color: rgba(255,91,106,.5); color: #ffd7db; }

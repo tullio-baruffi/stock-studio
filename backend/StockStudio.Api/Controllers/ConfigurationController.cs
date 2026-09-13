@@ -78,33 +78,31 @@ public class ConfigurationController : ControllerBase
             campi = new object[]
             {
                 Campo("colori", "Numero di tinte", 2, 64, 1,
-                      "Quante campiture al massimo. È un tetto, non una promessa: le tinte che " +
-                      "descrivono una frangia di contorno invece di una zona vengono scartate."),
+                      "Quante campiture diverse avrà il disegno finito. Poche e i dettagli " +
+                      "colorati spariscono; chiederne tante non ne inventa."),
                 Campo("unione", "Unione tinte gemelle", 0, 4000, 50,
-                      "Quanto insistere nel rimettere insieme due tinte che descrivono la stessa " +
-                      "cosa. Zero le lascia separate, e serve a vedere la tavolozza grezza."),
+                      "Rimette insieme due tinte quasi identiche che si sono divise la stessa " +
+                      "campitura. Alzalo se una superficie unita esce a chiazze."),
                 Campo("rumore", "Riduzione rumore", 0, 8, 1,
-                      "Il raggio della mediana passata prima di scegliere le tinte. Toglie " +
-                      "l'ondeggiamento del JPEG, che altrimenti decide da che parte cade il pixel " +
-                      "e fa nascere il confine già frastagliato. Zero la salta."),
+                      "Pulisce l'immagine prima di scegliere le tinte. Alzalo se i contorni " +
+                      "escono seghettati; troppo, e i dettagli minuti spariscono."),
                 Campo("lisciatura", "Lisciatura della mappa", 0, 6, 1,
-                      "Quanto si sfoca l'appartenenza a una tinta per raddrizzare la scalinata di " +
-                      "pixel. Alzarlo su un disegno con linee sottili le mangia."),
+                      "Quanto arrotondare il bordo fra una campitura e l'altra. Abbassalo per " +
+                      "tenere gli spigoli vivi di loghi e scritte."),
                 Campo("granelli", "Granelli da togliere", 0, 20000, 10,
-                      "Sotto quanti pixel una macchia è rumore invece che un dettaglio. Zero non " +
-                      "ne toglie nessuna. È quello che pesa di più: non toglie nodi da un " +
-                      "contorno, toglie contorni interi."),
+                      "Butta via le macchie più piccole di così. Alzalo se il disegno è pieno di " +
+                      "schegge; troppo, e spariscono anche i dettagli veri. Zero non ne toglie."),
                 Campo("tolleranza", "Fedeltà del tracciato", 0.1, 12, 0.1,
-                      "Di quanto la curva può scostarsi dai punti misurati. Più alto, meno nodi e " +
-                      "curve più dolci; più basso, più nodi e più aderenza alla scalinata."),
+                      "Di quanto la curva può discostarsi dal bordo misurato. Basso: tante curve " +
+                      "e ricalca le sbavature. Alto: poche curve e le forme si deformano."),
                 Campo("angolo", "Angolo di spigolo", 15, 170, 5,
-                      "Oltre quanti gradi di svolta il contorno ha uno spigolo vero da tenere, " +
-                      "invece di una curva."),
+                      "Da quanti gradi in su una svolta è uno spigolo invece di una curva. Si " +
+                      "sente poco: per gli spigoli conta più la lisciatura."),
                 Campo("morbidezza", "Morbidezza dei contorni", 0, 12, 0.5,
-                      "Di quanti pixel il contorno può allontanarsi dalla scalinata mentre lo si " +
-                      "liscia. È una garanzia contro gli spigoli smussati più che una leva."),
+                      "Quanto il contorno può allontanarsi dai pixel misurati mentre viene " +
+                      "lisciato. È un limite di sicurezza, non una leva."),
                 Campo("giri", "Giri di lisciatura", 0, 60, 1,
-                      "Quante passate di lisciatura. Oltre la convergenza non cambia più niente."),
+                      "Quante passate di lisciatura. Oltre un certo punto non cambia più niente."),
             },
         });
 
