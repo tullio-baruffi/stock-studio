@@ -1330,6 +1330,9 @@ export default function RevisioneView() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="ritraccia-titolo">Ritraccia «{corrente.fileName}»</h3>
+
+            {/* Scorre solo il corpo: i pulsanti in fondo restano sempre raggiungibili. */}
+            <div className="tracciato-corpo">
             <p className="muted small">
               SVG ed EPS vengono rifatti dall'originale conservato, o dal JPG se l'originale non c'è
               più. I metadati e il JPG non si toccano, e SharePoint conserva le versioni precedenti
@@ -1396,9 +1399,11 @@ export default function RevisioneView() {
 
             <PannelloTracciato
               valore={tracciatoScelto}
-              onChange={setTracciatoScelto}
+              onChange={(v) => { setTracciatoScelto(v); setConsigliatiApplicati(false); }}
               disabilitato={occupato}
             />
+            </div>
+
             <div className="modal-actions">
               <button className="btn ghost" onClick={() => setFinestraTracciato(false)} disabled={occupato}>
                 Annulla

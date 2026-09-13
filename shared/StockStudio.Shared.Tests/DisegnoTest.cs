@@ -176,6 +176,8 @@ public class DisegnoTest
         Assert.True(c.RiduzioneRumore <= p.RiduzioneRumore,
             $"rumore {c.RiduzioneRumore} > predefinito {p.RiduzioneRumore}");
         Assert.True(c.RaggioLisciatura <= p.RaggioLisciatura);
+        Assert.True(c.Tolleranza <= p.Tolleranza + 1e-9,
+            $"fedelta' {c.Tolleranza:0.00} > predefinito {p.Tolleranza:0.00}");
     }
 
     /// <summary>
@@ -195,6 +197,85 @@ public class DisegnoTest
             $"effettivi {effettivi.Granelli} > dichiarati {c.Granelli} su un'immagine piccola");
     }
 
+    /// <summary>
+    /// La fedelta' si abbassa quando il disegno ha strutture sottili.
+    ///
+    /// E' la correzione che mancava: la fedelta' dice di quanto la curva puo' allontanarsi dal
+    /// bordo, e se quel margine vale quanto l'anello di una bollicina la curva puo' attraversarlo
+    /// tutto. Misurato sulla balena, dove l'anello e' spesso tre pixel e la media venti: a 2,5 px
+    /// le bolle escono poligonali, a 1,3 tonde.
+    /// </summary>
+    [Fact]
+    public void LeStruttureSottiliAbbassanoLaFedelta()
+    {
+        // Una tavola vicina a quelle vere. Su un'immagine minuscola non si misura niente di utile:
+        // la riscalatura verso la grandezza convenzionale si ferma al suo limite e gonfia ogni
+        // misura di tre volte, schiacciando entrambi i casi contro il predefinito.
+        const int w = 1500, h = 600;
+        var p = ParametriTracciato.Predefiniti;
+
+        var conFilo = Disegno.Consiglia(ConFiloSottile(w, h), w, h, new bool[0], p);
+        var senza = Disegno.Consiglia(SoloCampitureLarghe(w, h), w, h, new bool[0], p);
+
+        Assert.True(conFilo.Tolleranza < senza.Tolleranza,
+            $"con un filo sottile la fedelta' e' {conFilo.Tolleranza:0.00}, " +
+            $"senza {senza.Tolleranza:0.00}: doveva essere piu' stretta");
+    }
+
+    /// <summary>
+    /// Ma non si abbassa per un granello: una macchiolina minuscola non e' una struttura, e se
+    /// contasse basterebbe un puntino di rumore per far esplodere il numero di nodi di ogni file.
+    /// </summary>
+    [Fact]
+    public void UnGranelloNonAbbassaLaFedelta()
+    {
+        const int w = 1500, h = 600;
+        var p = ParametriTracciato.Predefiniti;
+        var img = SoloCampitureLarghe(w, h);
+        // Un puntino di tre pixel per lato, ben sotto la quota minima.
+        for (var y = 5; y < 8; y++)
+            for (var x = 5; x < 8; x++)
+            {
+                var i = (y * w + x) * 3;
+                img[i] = 250; img[i + 1] = 40; img[i + 2] = 40;
+            }
+
+        var conGranello = Disegno.Consiglia(img, w, h, new bool[0], p);
+        var senza = Disegno.Consiglia(SoloCampitureLarghe(w, h), w, h, new bool[0], p);
+
+        Assert.Equal(senza.Tolleranza, conGranello.Tolleranza, 3);
+    }
+
+    /// <summary>Un filo sottile su una campitura larga: e' il caso dell'anello di una bolla.</summary>
+    private static byte[] ConFiloSottile(int w, int h)
+    {
+        var rgb = SoloCampitureLarghe(w, h);
+        // Una banda alta pochi pixel ma lunga tutta l'immagine: area piccola, perimetro grande.
+        for (var y = h / 2 - 1; y < h / 2 + 2; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var i = (y * w + x) * 3;
+                rgb[i] = 20; rgb[i + 1] = 20; rgb[i + 2] = 20;
+            }
+        return rgb;
+    }
+
+    /// <summary>Due sole campiture, entrambe larghe: niente di sottile da conservare.</summary>
+    private static byte[] SoloCampitureLarghe(int w, int h)
+    {
+        var rgb = new byte[w * h * 3];
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var i = (y * w + x) * 3;
+                var dentro = x > w / 4 && x < 3 * w / 4 && y > h / 4 && y < 3 * h / 4;
+                rgb[i] = (byte)(dentro ? 40 : 240);
+                rgb[i + 1] = (byte)(dentro ? 70 : 242);
+                rgb[i + 2] = (byte)(dentro ? 120 : 246);
+            }
+        return rgb;
+    }
+
     [Fact]
     public void UnaMisuraVuotaLasciaILPredefinito()
     {
@@ -205,3 +286,4 @@ public class DisegnoTest
         Assert.Equal(p.NumeroColori, c.NumeroColori);
     }
 }
+

@@ -380,16 +380,29 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 .guide-note p:last-child { margin-bottom: 0; }
 
 /* Mode selector */
-.modebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+/*
+  Le quattro modalità stanno su una riga sola.
+  La domanda va a capo da sola sopra i pulsanti (larghezza piena), e i pulsanti si spartiscono la
+  riga in parti uguali restringendosi invece di andare a capo: da quando le modalità sono quattro,
+  con flex-wrap la quarta finiva sotto e sembrava di un altro gruppo.
+*/
+.modebar {
+  display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.modebar > .muted { flex: 1 0 100%; align-self: center; }
 .modebtn {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
   padding: 10px 14px; cursor: pointer; color: var(--muted); font: inherit; text-align: left;
+  /* Base zero: i pulsanti si dividono lo spazio per quote uguali, non per lunghezza del testo. */
+  flex: 1 1 0; min-width: 0;
 }
-.modebtn strong { color: var(--text); font-size: 14px; }
+.modebtn strong { color: var(--text); font-size: 14px; white-space: nowrap; }
 .modebtn span { font-size: 11px; }
 .modebtn:hover { border-color: var(--accent); }
 .modebtn.on { border-color: var(--accent); background: var(--panel2); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Sotto una certa larghezza quattro colonne non ci stanno più davvero: due e due. */
+@media (max-width: 860px) { .modebtn { flex: 1 1 44%; } }
 
 /* Validation panel */
 .valid { margin-top: 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
@@ -534,8 +547,28 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 /* Nella barra del caricamento il pannello va a capo sotto la spiegazione, non accanto. */
 .bulkbar.tracciato-barra { display: block; }
 .bulkbar.tracciato-barra > span { display: block; line-height: 1.6; margin-bottom: 12px; }
-/* La finestra del ritracciamento mostra tutti i campi, e quella normale è troppo stretta. */
-.modal.tracciato-modale { max-width: 720px; }
+/*
+  La finestra del ritracciamento mostra tutti i campi, e quella normale è troppo stretta.
+
+  E può diventare più alta dello schermo: con nove cursori, le loro spiegazioni e la tabella di
+  cosa cambia, i pulsanti finivano fuori dalla parte visibile e non si riusciva né a confermare né
+  ad annullare. Ora scorre il **corpo**, mentre titolo e pulsanti restano dove sono: chi scorre i
+  cursori non perde di vista il modo di uscire.
+*/
+.modal.tracciato-modale {
+  max-width: 720px;
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+}
+.modal.tracciato-modale > h3 { flex: 0 0 auto; }
+.modal.tracciato-modale > .tracciato-corpo {
+  flex: 1 1 auto; overflow-y: auto; min-height: 0;
+  /* Lo spazio serve a non far toccare i cursori alla barra di scorrimento. */
+  padding-right: 6px; margin-right: -6px;
+}
+.modal.tracciato-modale > .modal-actions {
+  flex: 0 0 auto; padding-top: 14px; margin-top: 4px; border-top: 1px solid var(--border);
+}
 
 /* La taratura proposta misurando il disegno: si legge prima dei cursori, e li spiega. */
 .consigliato {

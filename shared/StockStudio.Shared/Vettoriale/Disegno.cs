@@ -74,6 +74,21 @@ namespace StockStudio.Shared.Vettoriale
             /// lisciare o semplificare senza mangiarlo.
             /// </summary>
             public double Spessore;
+            /// <summary>
+            /// Lo spessore delle strutture **sottili**, in pixel.
+            ///
+            /// Serve perche' lo spessore medio non dice quel che fa male. Su un'illustrazione il
+            /// corpo grande domina la media -- venti pixel sulla balena -- mentre a rovinarsi sono
+            /// l'anello di una bollicina o il filo di un contorno, che ne misurano tre. Chiedendo
+            /// una fedelta' di due pixel e mezzo su un anello di tre, la curva puo' vagare quasi
+            /// quanto tutto l'anello: e' esattamente il motivo per cui le bolle uscivano
+            /// bitorzolute.
+            ///
+            /// Si prende la tinta piu' sottile fra quelle che coprono almeno
+            /// <see cref="QuotaMinima"/> dell'inchiostro: sotto quella soglia sarebbero granelli,
+            /// non strutture, e farebbero scendere la misura a zero per un pulviscolo qualunque.
+            /// </summary>
+            public double SpessoreFine;
             /// <summary>Che frazione del foglio e' disegno invece che fondo.</summary>
             public double Inchiostro;
             /// <summary>Il lato lungo dell'immagine misurata.</summary>
@@ -131,18 +146,49 @@ namespace StockStudio.Shared.Vettoriale
             for (var i = 0; i < conteggi.Length; i++) if (i != fondo) inchiostro += conteggi[i];
 
             long confini = 0;
+            // Il perimetro tinta per tinta, non solo quello complessivo: lo spessore delle
+            // strutture sottili si legge li' (vedi Misure.SpessoreFine).
+            var perimetri = new long[sonda.Colori.Length];
             for (var y = 0; y < altezza; y++)
                 for (var x = 0; x < larghezza; x++)
                 {
                     var i = y * larghezza + x;
-                    if (x + 1 < larghezza && indici[i] != indici[i + 1]) confini++;
-                    if (y + 1 < altezza && indici[i] != indici[i + larghezza]) confini++;
+                    if (x + 1 < larghezza && indici[i] != indici[i + 1])
+                    {
+                        confini++;
+                        perimetri[indici[i]]++;
+                        perimetri[indici[i + 1]]++;
+                    }
+                    if (y + 1 < altezza && indici[i] != indici[i + larghezza])
+                    {
+                        confini++;
+                        perimetri[indici[i]]++;
+                        perimetri[indici[i + larghezza]]++;
+                    }
                 }
 
             m.Spessore = confini > 0 ? 2.0 * inchiostro / confini : 0;
             m.Inchiostro = (double)inchiostro / ((long)larghezza * altezza);
+
+            // La tinta piu' sottile fra quelle abbastanza estese da essere una struttura.
+            var fine = double.MaxValue;
+            for (var i = 0; i < conteggi.Length; i++)
+            {
+                if (i == fondo || perimetri[i] == 0) continue;
+                if (inchiostro > 0 && (double)conteggi[i] / inchiostro < QuotaMinima) continue;
+                var s = 2.0 * conteggi[i] / perimetri[i];
+                if (s > 0 && s < fine) fine = s;
+            }
+            m.SpessoreFine = fine == double.MaxValue ? m.Spessore : fine;
             return m;
         }
+
+        /// <summary>
+        /// Quanta parte dell'inchiostro deve coprire una tinta per contare come struttura invece
+        /// che come pulviscolo. Sotto questa quota, un granello qualunque farebbe crollare la
+        /// misura dello spessore fine e con essa la fedelta' del tracciato.
+        /// </summary>
+        private const double QuotaMinima = 0.01;
 
         /// <summary>
         /// La taratura che questo disegno chiede, espressa come chiunque altro la scrive: riferita
@@ -162,9 +208,14 @@ namespace StockStudio.Shared.Vettoriale
         /// **Tinte** da quante ne distingue la sonda, con un margine: chiederne molte di piu' non
         /// ne inventa e costa tempo, chiederne meno butta via colori che ci sono.
         ///
-        /// Tolleranza, angolo, morbidezza e giri restano quelli di serie: misurandoli sulle
-        /// immagini vere non si e' vista una regola che li leghi al disegno, e inventarne una
-        /// sarebbe peggio che lasciarli dove sono.
+        /// **Fedelta'** dallo spessore delle strutture **sottili**, non da quello medio: e' il
+        /// margine che la curva ha per allontanarsi dal bordo, e se vale quanto l'anello di una
+        /// bollicina l'anello esce bitorzoluto. Vale per tutti i generi, e anche qui si puo' solo
+        /// abbassare il predefinito.
+        ///
+        /// Angolo, morbidezza e giri restano quelli di serie: misurandoli sulle immagini vere non
+        /// si e' vista una regola che li leghi al disegno, e inventarne una sarebbe peggio che
+        /// lasciarli dove sono.
         /// </summary>
         public static ParametriTracciato Consiglia(Misure m, ParametriTracciato? partenza = null)
         {
@@ -200,6 +251,27 @@ namespace StockStudio.Shared.Vettoriale
             }
 
             p.NumeroColori = (int)Math.Round(Limita(m.Tinte * 1.5, 6, 48));
+
+            // La fedelta' non puo' essere paragonabile allo spessore delle strutture sottili.
+            //
+            // E' la correzione che mancava, e riguarda **tutti** i disegni, non solo quelli a tinte
+            // piatte. La fedelta' dice di quanto la curva puo' allontanarsi dal bordo misurato: se
+            // quel margine vale quanto l'anello di una bollicina, la curva puo' vagare per tutta
+            // la larghezza dell'anello, e l'anello esce bitorzoluto. Misurato sulla balena, dove
+            // l'anello delle bolle e' spesso tre pixel mentre la media e' venti:
+            //     fedelta' 2,5 px ->  5120 nodi, bolle poligonali
+            //     fedelta' 1,4 px ->  5971 nodi, bolle quasi tonde
+            //     fedelta' 0,7 px ->  8453 nodi, bolle tonde
+            //
+            // Un terzo dello spessore fine e' il margine che tiene la curva dentro la struttura
+            // invece di lasciarla attraversarla. Come per il resto, si puo' solo **abbassare** il
+            // predefinito: su un disegno di sole campiture larghe non c'e' motivo di fare piu'
+            // nodi di quelli che gia' si facevano.
+            if (m.SpessoreFine > 0)
+            {
+                var tolleranza = m.SpessoreFine / 3.0 / s;
+                p.Tolleranza = Limita(tolleranza, 0.3, p.Tolleranza);
+            }
 
             return p.Convalidato();
         }
