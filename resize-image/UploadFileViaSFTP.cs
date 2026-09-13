@@ -71,12 +71,11 @@ namespace MJ.Classifier
         private const string ConnectionName = "rgclassifier8f3e_STORAGE";
 
         /// <summary>
-        /// HTTP trigger function to upload a file to SFTP.
+        /// Queue-triggered function that uploads a file to the configured marketplaces.
         /// </summary>
-        /// <param name="req">The HTTP request.</param>
-        /// <param name="config">The configuration.</param>
+        /// <param name="myQueueItem">The queue message describing the file to send.</param>
+        /// <param name="context">The execution context.</param>
         /// <param name="log">The logger.</param>
-        /// <returns>An IActionResult representing the result of the upload operation.</returns>
         [FunctionName("UploadFileViaSFTP")]
         public async Task Run(
             [QueueTrigger(QueueContainerName, Connection = ConnectionName)] string myQueueItem
@@ -94,15 +93,15 @@ namespace MJ.Classifier
 
             try
             {
-                log.LogInformation($"HTTP trigger function processing file: {data.ServerRelativeUrl}");
+                log.LogInformation($"Queue trigger function processing file: {data.ServerRelativeUrl}");
                 var splittedUrl = data.ServerRelativeUrl.Split("/");
                 var fileName = splittedUrl.LastOrDefault();
                 var folderName = splittedUrl.Reverse().Skip(1).FirstOrDefault();
                 // Il percorso intero, non il solo nome: ogni immagine vive nella sua sottocartella,
                 // e con il solo nome la riscrittura su SharePoint finiva contro la radice del sito.
                 var folderUrl = data.ServerRelativeUrl.Substring(0, data.ServerRelativeUrl.LastIndexOf('/'));
-                log.LogInformation($"HTTP trigger function processing file name: {fileName}");
-                log.LogInformation($"HTTP trigger function processing folder name: {folderName}");
+                log.LogInformation($"Queue trigger function processing file name: {fileName}");
+                log.LogInformation($"Queue trigger function processing folder name: {folderName}");
 
                 // Connection settings contain credentials; log only non-sensitive destination counts.
                 log.LogInformation(

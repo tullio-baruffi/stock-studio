@@ -364,7 +364,7 @@ export default function RevisioneView() {
         setApprovate((n) => n + 1);
         const quante = r.accodate ?? 0;
         setEsito({
-          testo: `${it?.fileName ?? bersaglio} → in coda adesso (${quante} ${quante === 1 ? "consegna" : "consegne"}), parte entro pochi secondi`,
+          testo: `${it?.fileName ?? bersaglio} → in coda adesso (${quante} ${quante === 1 ? "consegna" : "consegne"}), parte entro un minuto`,
           tipo: "ok",
         });
         setItems((cur) => cur.filter((x) => x.id !== bersaglio));
