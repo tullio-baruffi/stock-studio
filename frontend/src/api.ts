@@ -118,9 +118,18 @@ export type Deliverable = {
  * riscrivere quelle regole in ogni schermata, e vederle divergere alla prima modifica.
  */
 export type StatoPipeline = {
-  stato: "revisione" | "pronto" | "in-attesa" | "pubblicato" | "errore";
+  stato: "revisione" | "pronto" | "in-attesa" | "in-consegna" | "pubblicato" | "errore";
   etichetta: string;
   spiega: string;
+  /** Se in questo stato ha senso chiedere un invio. Deciso dal server, non dedotto qui. */
+  puoInviare: boolean;
+  /** Se ha senso forzare la partenza immediata. Vale anche da «in attesa», mai da «in pubblicazione». */
+  puoForzare: boolean;
+  /**
+   * Se il file è rimasto fermo in «in pubblicazione» oltre ogni attesa legittima e va rimesso in
+   * gioco a mano. Lo decide il server, che conosce la data di modifica.
+   */
+  puoSbloccare: boolean;
 };
 
 /** Esito dell'importazione dell'esportazione Adobe. */
@@ -859,9 +868,22 @@ export const api = {
    * invece che al prossimo quarto d'ora.
    */
   backofficePubblicaOra(library: string, id: number, force = false):
-      Promise<BackofficeMutation & { accodate?: number; gruppo?: number }> {
+      Promise<BackofficeMutation & { accodate?: number; nonRiuscite?: number; gruppo?: number }> {
     const q = new URLSearchParams({ library, force: String(force) });
     return f(`/api/backoffice/items/${id}/pubblica-ora?${q}`, { method: "POST" }).then(jsonOrThrow);
+  },
+  /**
+   * Rimette in gioco un file rimasto fermo in «in pubblicazione».
+   *
+   * Chi accoda segna il file come preso in carico prima di mettere il messaggio in coda, e da quel
+   * momento nessuno può più scrivere su quell'elemento: è la protezione contro il doppio invio. Se
+   * però la catena non si chiude, il file resta fermo e invisibile a tutti. Il server accetta lo
+   * sblocco solo oltre una certa anzianità, perché toglierlo a una consegna in volo la farebbe
+   * partire due volte.
+   */
+  backofficeSblocca(library: string, id: number): Promise<BackofficeMutation> {
+    return f(`/api/backoffice/items/${id}/sblocca?library=${encodeURIComponent(library)}`,
+             { method: "POST" }).then(jsonOrThrow);
   },
   backofficeMove(library: string, id: number, targetLibrary: string): Promise<{ ok: boolean; movedTo?: string; error?: string }> {
     return f(`/api/backoffice/items/${id}/move?library=${encodeURIComponent(library)}`, {

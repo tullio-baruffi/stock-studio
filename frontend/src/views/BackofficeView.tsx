@@ -564,8 +564,12 @@ export default function BackofficeView() {
                     </button>
                   )}
                   {library === "ImagesToSend" && !readOnly && (
-                    <button className="btn small" onClick={() => send(it)} disabled={working || it.invia}>
-                      {it.invia ? "In coda" : working ? "…" : "Invia ai marketplace"}
+                    <button className="btn small" onClick={() => send(it)}
+                            disabled={working || (it.pipeline ? !it.pipeline.puoInviare : it.invia)}
+                            title={it.pipeline?.spiega}>
+                      {it.pipeline && !it.pipeline.puoInviare
+                        ? it.pipeline.etichetta
+                        : working ? "…" : "Invia ai marketplace"}
                     </button>
                   )}
                   {NEXT_STAGE[library] && !readOnly && (

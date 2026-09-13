@@ -5,6 +5,7 @@ using StockStudio.Api.Services;
 using StockStudio.Api.Services.Feedback;
 using StockStudio.Api.Services.Integration;
 using StockStudio.Api.Services.Scoring;
+using StockStudio.Shared.Pipeline;
 
 namespace StockStudio.Api.Controllers;
 
@@ -567,9 +568,24 @@ public class BackofficeController : ControllerBase
 
         try
         {
+            var target = _sp.GetItem(library, id);
+
             if (value && !force)
             {
-                var target = _sp.GetItem(library, id);
+                // Un invio si chiede da fermo. Dagli stati di passaggio no: e' proprio li' che
+                // premere due volte -- o selezionare in blocco senza guardare -- faceva partire due
+                // copie della stessa immagine. La regola e' la stessa che decide i pulsanti, letta
+                // dallo stesso posto: tenerne due versioni vorrebbe dire vederle divergere.
+                var (stato, etichetta, spiega) = StatoPipeline.Di(library, target.Invia, target.Inviato, target.Stato);
+                if (!StatoPipeline.SiPuoInviare(stato))
+                    return Ok(new
+                    {
+                        ok = false,
+                        giaInCorso = true,
+                        stato,
+                        error = $"«{target.FileName}» è già «{etichetta.ToLowerInvariant()}»: {spiega}",
+                    });
+
                 var v = _validator.Validate(target.Title, target.Description, Punteggiatore.KeywordDi(target.Tags), "vector");
                 if (v.BlocksDispatch)
                     return Ok(new
@@ -611,9 +627,11 @@ public class BackofficeController : ControllerBase
     /// riempirebbe, con lo stesso messaggio: la funzione che pubblica non sa da dove arriva, e la
     /// catena resta una sola.
     ///
-    /// Il flag si alza lo stesso. Serve perche' la pipeline lo legge per sapere che il file e'
-    /// stato mandato, e perche' senza di quello un'esecuzione fallita non verrebbe piu' ritentata
-    /// dal giro di sorveglianza.
+    /// ## Le due strade devono essere indistinguibili
+    /// Non basta che finiscano nella stessa coda: devono lasciare SharePoint nello stesso stato, o
+    /// il file diventa raggiungibile da entrambe e parte due volte. In particolare si segna
+    /// "Inviato" **prima** di accodare, esattamente come fa la Logic App, e ogni consegna gia'
+    /// partita resta fuori.
     /// </summary>
     [HttpPost("items/{id:int}/pubblica-ora")]
     public async Task<IActionResult> PubblicaOra(int id, [FromQuery] string library = "ImagesToSend",
@@ -632,6 +650,19 @@ public class BackofficeController : ControllerBase
 
             if (!force)
             {
+                // Forzare si puo' anche da "in attesa" -- e' il caso per cui il pulsante esiste --
+                // ma non da una consegna gia' in corso: li' il messaggio e' gia' in coda, e un
+                // secondo lo duplicherebbe sul marketplace.
+                var (stato, etichetta, spiega) = StatoPipeline.Di(library, portatore.Invia, portatore.Inviato, portatore.Stato);
+                if (!StatoPipeline.SiPuoForzare(stato))
+                    return Ok(new
+                    {
+                        ok = false,
+                        giaInCorso = true,
+                        stato,
+                        error = $"«{portatore.FileName}» è già «{etichetta.ToLowerInvariant()}»: {spiega}",
+                    });
+
                 var v = _validator.Validate(portatore.Title, portatore.Description,
                                             Punteggiatore.KeywordDi(portatore.Tags), "vector");
                 if (v.BlocksDispatch)
@@ -650,29 +681,144 @@ public class BackofficeController : ControllerBase
             var aggiornato = _sp.SetInvia(library, id, true);
             var gruppo = PropagateToGroup(library, aggiornato, true);
 
+            // Le consegne gia' partite restano fuori. PropagateToGroup le salta gia' quando
+            // allinea i contrassegni, ma finche' il ciclo qui sotto le includeva lo stesso, un
+            // gruppo inviato a meta' rimandava ai marketplace quel che era gia' salito.
             var consegne = new List<SharePointItem> { aggiornato };
-            consegne.AddRange(_sp.GetDeliverableSiblings(library, aggiornato));
+            consegne.AddRange(_sp.GetDeliverableSiblings(library, aggiornato).Where(s => !s.Inviato));
 
             var accodate = new List<string>();
+            var saltate = new List<string>();
+            SharePointItem finale = aggiornato;
+
             foreach (var c in consegne)
             {
-                var corpo = new
+                // La presa in carico sta dentro al riparo insieme all'accodamento: sono due passi
+                // di una cosa sola, e se il primo non riesce il secondo non deve nemmeno partire --
+                // ma nemmeno deve fermare le altre consegne del gruppo.
+                var presa = false;
+                try
                 {
-                    title = c.Title,
-                    description = c.Description,
-                    tags = c.Tags,
-                    url = c.ServerRelativeUrl,
-                    Id = c.Id,
-                    Identifier = c.FileName,
-                };
-                if (await _queue.AccodaInvioAsync(corpo, ct)) accodate.Add(c.FileName);
+                    // Prima dell'accodamento, come fa la Logic App: da questo istante la
+                    // sorveglianza non vede piu' il file e non puo' accodarlo una seconda volta.
+                    var marcato = _sp.MarcaPresoInCarico(library, c.Id, true);
+                    presa = true;
+                    if (c.Id == aggiornato.Id) finale = marcato;
+
+                    var corpo = new
+                    {
+                        title = c.Title,
+                        description = c.Description,
+                        tags = c.Tags,
+                        url = c.ServerRelativeUrl,
+                        Id = c.Id,
+                        Identifier = IdentificatoreDi(c.ServerRelativeUrl),
+                    };
+                    if (!await _queue.AccodaInvioAsync(corpo, ct))
+                        throw new InvalidOperationException("la coda non ha accettato il messaggio");
+                    accodate.Add(c.FileName);
+                }
+                catch (Exception ex)
+                {
+                    // Marcato ma non accodato sarebbe il peggiore dei due mondi: il file resterebbe
+                    // fermo per sempre, creduto partito, e nemmeno la sorveglianza lo raccoglierebbe.
+                    _log.LogWarning(ex, "Accodamento non riuscito per {File}", c.FileName);
+                    if (presa)
+                    {
+                        try { _sp.MarcaPresoInCarico(library, c.Id, false); }
+                        catch (Exception rip) { _log.LogError(rip, "Presa in carico non tolta per {File}: resta fermo", c.FileName); }
+                    }
+                    saltate.Add(c.FileName);
+                }
             }
 
-            _log.LogInformation("Pubblicazione immediata: accodate {N} consegne di {File}", accodate.Count, aggiornato.FileName);
-            return Ok(new { ok = true, accodate = accodate.Count, gruppo, item = Shape(library, aggiornato) });
+            _log.LogInformation("Pubblicazione immediata: accodate {N} consegne di {File}, non riuscite {M}",
+                                accodate.Count, aggiornato.FileName, saltate.Count);
+            // Riuscito vuol dire che e' partito **tutto** il gruppo. Con una consegna sola in coda e
+            // due rimaste indietro, dire "fatto" manderebbe l'autore a guardare altro mentre due
+            // terzi del prodotto non sono saliti: le riprendera' la sorveglianza entro un quarto
+            // d'ora, ma chi ha premuto il pulsante deve saperlo adesso.
+            return Ok(new
+            {
+                ok = saltate.Count == 0 && accodate.Count > 0,
+                accodate = accodate.Count,
+                nonRiuscite = saltate.Count,
+                error = accodate.Count == 0
+                    ? "Nessuna consegna è finita in coda: non è partito niente."
+                    : saltate.Count > 0
+                        ? $"{accodate.Count} in coda, {saltate.Count} no ({string.Join(", ", saltate)}): "
+                          + "quelle rimaste indietro ripartono col giro di sorveglianza entro quindici minuti."
+                        : null,
+                gruppo,
+                item = Shape(library, finale),
+            });
         }
         catch (Exception ex)
         {
+            return Ok(new { ok = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Quanto deve restare fermo un file "in pubblicazione" prima che lo si possa sbloccare a mano.
+    ///
+    /// Una pubblicazione vera si chiude in secondi, e il giro di sorveglianza passa ogni quindici
+    /// minuti: mezz'ora e' oltre qualunque attesa legittima. Sotto quella soglia lo sblocco e'
+    /// rifiutato, perche' togliere la presa in carico a un file davvero in volo lo farebbe accodare
+    /// una seconda volta -- cioe' esattamente il difetto che la presa in carico esiste per evitare.
+    /// </summary>
+    private const int MinutiPrimaDiPoterSbloccare = 30;
+
+    private static bool FermoDaTroppo(string modified)
+    {
+        return DateTimeOffset.TryParse(modified, out var quando)
+            && DateTimeOffset.UtcNow - quando.ToUniversalTime() > TimeSpan.FromMinutes(MinutiPrimaDiPoterSbloccare);
+    }
+
+    /// <summary>
+    /// Rimette in gioco un file rimasto fermo in "in pubblicazione".
+    ///
+    /// ## Perche' serve una via di rientro
+    /// Chi accoda segna "Inviato" prima di mettere il messaggio in coda, e da quel momento nessuno
+    /// puo' piu' scrivere su quell'elemento: ne' l'invio, ne' la pubblicazione immediata, ne' la
+    /// sorveglianza, che cerca proprio i file **senza** quel contrassegno. E' la protezione contro
+    /// il doppio invio, e funziona finche' la catena si chiude.
+    ///
+    /// Se non si chiude -- il processo muore fra la marcatura e l'accodamento, la chiamata che
+    /// sposta il file fallisce e viene inghiottita, la coda perde il messaggio -- quel file resta
+    /// fermo per sempre, invisibile a tutti e mostrato come "in pubblicazione" a vita. Senza questo
+    /// endpoint l'unico rimedio sarebbe modificare la colonna a mano in SharePoint.
+    /// </summary>
+    [HttpPost("items/{id:int}/sblocca")]
+    public IActionResult Sblocca(int id, [FromQuery] string library = "ImagesToSend")
+    {
+        var bad = Guard(library);
+        if (bad != null) return bad;
+
+        try
+        {
+            var it = _sp.GetItem(library, id);
+            var (stato, _, _) = StatoPipeline.Di(library, it.Invia, it.Inviato, it.Stato);
+
+            if (stato != StatoPipeline.InConsegna)
+                return Ok(new { ok = false, error = $"«{it.FileName}» non è in pubblicazione: non c'è niente da sbloccare." });
+
+            if (!FermoDaTroppo(it.Modified))
+                return Ok(new
+                {
+                    ok = false,
+                    error = $"«{it.FileName}» è stato preso in carico da poco: aspetta che finisca. "
+                          + $"Lo sblocco serve a un file rimasto fermo da più di {MinutiPrimaDiPoterSbloccare} minuti, "
+                          + "e toglierlo a una consegna in volo la farebbe partire due volte.",
+                });
+
+            var aggiornato = _sp.MarcaPresoInCarico(library, id, false);
+            _log.LogWarning("Sbloccato {File}: era fermo in pubblicazione da {Quando}", it.FileName, it.Modified);
+            return Ok(new { ok = true, item = Shape(library, aggiornato) });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Sblocco non riuscito per {Library}/{Id}", library, id);
             return Ok(new { ok = false, error = ex.Message });
         }
     }
@@ -1217,11 +1363,28 @@ public class BackofficeController : ControllerBase
         };
     }
 
-    /// <summary>Lo stato di pipeline, risolto qui e non dedotto da chi mostra.</summary>
+    /// <summary>
+    /// Lo stato di pipeline, risolto qui e non dedotto da chi mostra.
+    ///
+    /// Insieme allo stato viaggiano le due domande che decidono i pulsanti. Potrebbero sembrare
+    /// deducibili dallo stato, e infatti lo sono -- ma dedurle nel frontend vorrebbe dire scrivere
+    /// la stessa regola in due lingue diverse e vederle divergere alla prima modifica. E' la regola
+    /// che fa partire un caricamento vero: vale la pena mandarla gia' risolta.
+    /// </summary>
     private static object StatoDi(string library, SharePointItem i)
     {
         var (stato, etichetta, spiega) = StatoPipeline.Di(library, i.Invia, i.Inviato, i.Stato);
-        return new { stato, etichetta, spiega };
+        return new
+        {
+            stato,
+            etichetta,
+            spiega,
+            puoInviare = StatoPipeline.SiPuoInviare(stato),
+            puoForzare = StatoPipeline.SiPuoForzare(stato),
+            // Solo per un file rimasto fermo: vedi Sblocca. Qui serve la data, che la macchina a
+            // stati non conosce, quindi la domanda si risolve dove l'elemento c'e' per intero.
+            puoSbloccare = stato == StatoPipeline.InConsegna && FermoDaTroppo(i.Modified),
+        };
     }
 
     /// <summary>
@@ -1232,6 +1395,25 @@ public class BackofficeController : ControllerBase
     /// vuole un margine, perche' i file di una stessa generazione si scrivono a pochi secondi
     /// l'uno dall'altro e non vanno segnalati.
     /// </summary>
+    /// <summary>
+    /// L'identificatore che SharePoint attribuisce a un file, nella forma in cui lo scrive la
+    /// Logic App di sorveglianza.
+    ///
+    /// E' il percorso relativo al sito con le barre codificate due volte:
+    /// <c>ImagesToSend%252fcartella%252ffile.svg</c>. La forma non e' una scelta, e' quella che
+    /// esce dal connettore SharePoint -- verificata su un messaggio vero -- e le due strade di
+    /// pubblicazione devono produrre lo stesso messaggio, o a valle diventano distinguibili.
+    /// </summary>
+    private static string IdentificatoreDi(string serverRelativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(serverRelativeUrl)) return string.Empty;
+        var pezzi = serverRelativeUrl.Trim('/').Split('/');
+        // "/sites/<sito>/<libreria>/…": il prefisso del sito non fa parte dell'identificatore.
+        var da = pezzi.Length >= 3 && string.Equals(pezzi[0], "sites", StringComparison.OrdinalIgnoreCase)
+            ? 2 : 0;
+        return string.Join("%252f", pezzi.Skip(da));
+    }
+
     /// <summary>
     /// Il nome della cartella che contiene un file di libreria, che è anche la chiave con cui
     /// l'originale è stato conservato.

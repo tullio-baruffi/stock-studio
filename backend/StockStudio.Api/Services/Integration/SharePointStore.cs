@@ -1259,6 +1259,58 @@ public class SharePointStore
     }
 
     /// <summary>
+    /// Segna un elemento come preso in carico, prima che il suo messaggio finisca in coda.
+    ///
+    /// ## Perche' va fatto *prima*
+    /// La Logic App di sorveglianza interroga SharePoint ogni quindici minuti e raccoglie tutto
+    /// quello che ha "Invia" alzato e "Inviato" no. Se si accodasse lasciando "Inviato" a falso, il
+    /// giro successivo troverebbe lo stesso file e lo accoderebbe una seconda volta: due messaggi,
+    /// due caricamenti, la stessa immagine due volte sul marketplace.
+    ///
+    /// La Logic App infatti scrive "Inviato" **prima** di accodare. Chi pubblica subito deve fare
+    /// lo stesso, o le due strade non sono equivalenti -- ed e' proprio quello che succedeva:
+    /// finora la pubblicazione immediata si salvava solo perche' lo spostamento in ImagesSent
+    /// arrivava prima del giro successivo. Una corsa vinta, non una garanzia.
+    ///
+    /// ## Perche' si puo' anche disfare
+    /// Se poi l'accodamento non riesce, il contrassegno va rimesso a falso: altrimenti il file
+    /// resterebbe fermo per sempre, marcato come partito senza esserlo, e nemmeno la sorveglianza
+    /// lo raccoglierebbe piu'.
+    ///
+    /// ## Perche' rifiuta invece di sovrascrivere
+    /// Fra il momento in cui si legge lo stato di un gruppo e quello in cui si marcano le sue
+    /// consegne passano piu' viaggi verso SharePoint, e in quei secondi la Logic App di
+    /// sorveglianza puo' aver preso in carico lo stesso file. Sovrascrivere un "Inviato" gia' alzato
+    /// sarebbe un consenso silenzioso: il messaggio finirebbe in coda una seconda volta e
+    /// l'immagine salirebbe due volte sul marketplace. Chi chiama deve accorgersene, e saltare.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Quando si chiede la presa in carico di un elemento che qualcun altro ha gia' preso.
+    /// </exception>
+    public SharePointItem MarcaPresoInCarico(string listTitle, int id, bool preso)
+    {
+        using var ctx = CreateContext();
+        var list = ctx.Web.Lists.GetByTitle(listTitle);
+        var item = list.GetItemById(id);
+        ctx.Load(item);
+        ctx.ExecuteQuery();
+
+        if (preso && Flag(item, "Inviato"))
+            throw new InvalidOperationException(
+                "Preso in carico da qualcun altro mentre si preparava l'invio: non si accoda due volte.");
+
+        EnsureWritable(item);
+
+        item["Inviato"] = preso;
+        item.Update();
+        ctx.Load(item);
+        ctx.ExecuteQuery();
+
+        _log.LogInformation("SharePoint {List} item {Id}: Inviato = {V}", listTitle, id, preso);
+        return ToItem(item);
+    }
+
+    /// <summary>
     /// Le altre consegne della stessa immagine: i file che stanno nella sua stessa sottocartella e
     /// portano il suo stesso nome, estensione a parte.
     ///

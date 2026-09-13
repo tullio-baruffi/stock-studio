@@ -288,8 +288,19 @@ export default function RevisioneView() {
 
   /** Lo stato che il server ha gia' risolto: qui non si deduce niente. */
   const statoCorrente = corrente?.pipeline?.stato;
-  /** Chiesto e non ancora partito: l'invio non si ripete. */
-  const giaInviato = statoCorrente === "in-attesa";
+  /**
+   * Le due domande che decidono i pulsanti, risposte dal server insieme allo stato.
+   *
+   * Prima si deducevano qui da una sola condizione — «è in attesa?» — e quella condizione non
+   * copriva il file già preso in carico dalla coda ma non ancora spostato: per quello l'interfaccia
+   * rimostrava «Invia ai marketplace» su qualcosa che stava già salendo.
+   *
+   * In assenza di risposta (librerie che non hanno lo stato) si lascia fare, com'era prima.
+   */
+  const puoInviare = corrente?.pipeline ? corrente.pipeline.puoInviare !== false : true;
+  const puoForzare = corrente?.pipeline ? corrente.pipeline.puoForzare !== false : true;
+  /** Chiesto o già in viaggio: in entrambi i casi l'invio non si ripete, ma il motivo è diverso. */
+  const inViaggio = statoCorrente === "in-attesa" || statoCorrente === "in-consegna";
 
   /**
    * Dopo un'azione andata a buon fine si torna alla galleria.
@@ -310,6 +321,14 @@ export default function RevisioneView() {
     // Dall'ultima libreria non si va avanti: approvare non vorrebbe dire niente.
     if (!bersaglio || occupato || !prossimo) return;
     const it = items.find((x) => x.id === bersaglio);
+
+    // La scorciatoia da tastiera non passa dal pulsante, quindi la regola va ripetuta qui: senza,
+    // premere «A» su un file già in viaggio lo rimetterebbe in coda.
+    if (pubblica && it?.pipeline && !it.pipeline.puoInviare) {
+      setEsito({ testo: `${it.fileName}: ${it.pipeline.spiega}`, tipo: "errore" });
+      return;
+    }
+
     const dalDettaglio = apertaId === bersaglio;
     setOccupato(true);
     setAzione("approva");
@@ -353,6 +372,14 @@ export default function RevisioneView() {
     const bersaglio = id ?? corrente?.id;
     if (!bersaglio || occupato || !pubblica) return;
     const it = items.find((x) => x.id === bersaglio);
+
+    // Stessa ragione del pulsante «Invia»: «P» non passa di lì, e forzare una consegna già in
+    // corso significherebbe mandare due volte la stessa immagine al marketplace.
+    if (it?.pipeline && !it.pipeline.puoForzare) {
+      setEsito({ testo: `${it.fileName}: ${it.pipeline.spiega}`, tipo: "errore" });
+      return;
+    }
+
     const dalDettaglio = apertaId === bersaglio;
     setOccupato(true);
     setAzione("ora");
@@ -371,7 +398,10 @@ export default function RevisioneView() {
         setSelezione((s) => { const n = new Set(s); n.delete(bersaglio); return n; });
         if (dalDettaglio) tornaAllaGalleria();
       } else {
+        // Anche un invio parziale finisce qui: il server dichiara riuscito solo un gruppo partito
+        // per intero, e il messaggio dice quante consegne sono rimaste indietro e cosa ne sarà.
         setEsito({ testo: r.error ?? "Accodamento non riuscito.", tipo: "errore" });
+        ricarica();
       }
     } catch (e) {
       setEsito({ testo: (e as Error).message, tipo: "errore" });
@@ -380,6 +410,41 @@ export default function RevisioneView() {
       setAzione(null);
     }
   }, [corrente, occupato, items, pubblica, stadio, apertaId, tornaAllaGalleria]);
+
+  /**
+   * Rimette in gioco un file rimasto fermo in «in pubblicazione».
+   *
+   * Compare solo quando il server dice che ha senso, cioè oltre la mezz'ora: prima di allora il
+   * file è probabilmente davvero in volo, e sbloccarlo lo farebbe partire due volte.
+   */
+  const sblocca = useCallback(async (id?: number) => {
+    const bersaglio = id ?? corrente?.id;
+    if (!bersaglio || occupato) return;
+    const it = items.find((x) => x.id === bersaglio);
+    if (!confirm(
+      `Sbloccare «${it?.fileName ?? bersaglio}»?\n\n` +
+      "Risulta preso in carico da più di mezz'ora senza essere arrivato a destinazione. " +
+      "Sbloccandolo tornerà inviabile, e la pipeline lo riprenderà."
+    )) return;
+
+    setOccupato(true);
+    setAzione("sblocca");
+    try {
+      const r = await api.backofficeSblocca(stadio, bersaglio);
+      if (r.ok) {
+        setEsito({ testo: `${it?.fileName ?? bersaglio} → sbloccato, torna inviabile`, tipo: "ok" });
+        if (apertaId === bersaglio) tornaAllaGalleria();
+        ricarica();
+      } else {
+        setEsito({ testo: r.error ?? "Sblocco non riuscito.", tipo: "errore" });
+      }
+    } catch (e) {
+      setEsito({ testo: (e as Error).message, tipo: "errore" });
+    } finally {
+      setOccupato(false);
+      setAzione(null);
+    }
+  }, [corrente, occupato, items, stadio, apertaId, tornaAllaGalleria]);
 
   /** Segna e basta: la cancellazione vera avviene solo dal riepilogo, con conferma. */
   const segnaScarto = useCallback((id?: number) => {
@@ -533,12 +598,36 @@ export default function RevisioneView() {
   };
 
   const approvaSelezionate = async () => {
-    const ids = [...selezione];
-    if (ids.length === 0 || occupato || !prossimo) return;
+    const tutti = [...selezione];
+    if (tutti.length === 0 || occupato || !prossimo) return;
+
+    // Chi seleziona in blocco non guarda lo stato di ogni riga. Tenere fuori quelle già in viaggio
+    // qui, prima di chiedere conferma, è diverso dal vederle rifiutare una per una dal server:
+    // il conteggio finale torna, e si sa in anticipo quante ne partono davvero.
+    const fermi = pubblica
+      ? tutti.filter((id) => {
+          const it = items.find((x) => x.id === id);
+          return !it?.pipeline || it.pipeline.puoInviare;
+        })
+      : tutti;
+    const inViaggio = tutti.length - fermi.length;
+
+    if (fermi.length === 0) {
+      setEsito({
+        testo: `Nessuna da inviare: ${inViaggio === 1 ? "l'unica selezionata è" : `tutte e ${inViaggio} le selezionate sono`} già in viaggio.`,
+        tipo: "errore",
+      });
+      return;
+    }
+
+    const ids = fermi;
     const quante = `${ids.length} ${ids.length === 1 ? "immagine" : "immagini"}`;
-    if (!confirm(pubblica
+    const coda = inViaggio > 0
+      ? `\n\n${inViaggio} ${inViaggio === 1 ? "è già in viaggio e resta fuori" : "sono già in viaggio e restano fuori"}.`
+      : "";
+    if (!confirm((pubblica
       ? `Inviare ${quante} ai marketplace? Il caricamento parte davvero.`
-      : `Approvare ${quante} e passarle a «${STADI.find((s) => s.id === prossimo)?.label}»?`)) return;
+      : `Approvare ${quante} e passarle a «${STADI.find((s) => s.id === prossimo)?.label}»?`) + coda)) return;
 
     setOccupato(true);
     setAzione("approva-blocco");
@@ -563,7 +652,8 @@ export default function RevisioneView() {
     setAzione(null);
     ricarica();
     setEsito({
-      testo: `${fatte} ${pubblica ? "inviate" : "approvate"} su ${ids.length}.`,
+      testo: `${fatte} ${pubblica ? "inviate" : "approvate"} su ${ids.length}.`
+           + (inViaggio > 0 ? ` ${inViaggio} già in viaggio, lasciate stare.` : ""),
       tipo: fatte === ids.length ? "ok" : "errore",
     });
   };
@@ -1093,7 +1183,7 @@ export default function RevisioneView() {
               "Invia" restava li' invitante, e premerlo non faceva niente di visibile -- o peggio,
               rimetteva in coda qualcosa che era gia' in viaggio.
             */}
-            {prossimo && !giaInviato && (
+            {prossimo && (!pubblica || puoInviare) && (
               <button className="btn small primary" onClick={() => approva()} disabled={occupato}
                       title={pubblica
                         ? "Alza il flag Invia: la pipeline carica il gruppo sui marketplace e lo sposta fra i Pubblicati solo se l'invio riesce (A)"
@@ -1108,18 +1198,37 @@ export default function RevisioneView() {
               La scorciatoia per chi non vuole aspettare: il flag lo guarda una Logic App che
               interroga SharePoint ogni quindici minuti, e chi sta davanti alla schermata quei
               quindici minuti li vive come un guasto. Qui il file finisce subito in coda.
+
+              Si puo' forzare anche da «in attesa» — e' il caso per cui il pulsante esiste — ma non
+              da «in pubblicazione», dove il messaggio e' gia' in coda e un secondo lo
+              duplicherebbe sul marketplace.
             */}
-            {pubblica && (
+            {pubblica && puoForzare && (
               <button className="btn small" onClick={() => pubblicaOra()} disabled={occupato}
                       title="Mette il gruppo in coda adesso, senza aspettare il giro di sorveglianza (P)">
                 {azione === "ora" ? <><Rotella /> Accodo…</> : "⚡ Pubblica ora"}
               </button>
             )}
 
-            {giaInviato && (
+            {inViaggio && (
               <span className="cn-attesa" title={corrente.pipeline?.spiega}>
-                ⏳ gia&apos; inviato, in attesa
+                {statoCorrente === "in-consegna"
+                  ? "▲ in pubblicazione, non interrompibile"
+                  : "⏳ gia' inviato, in attesa"}
               </span>
+            )}
+
+            {/*
+              La via di rientro per un file rimasto incastrato: preso in carico, mai arrivato, e da
+              quel momento intoccabile da chiunque -- compresa la sorveglianza, che cerca proprio i
+              file senza quel contrassegno. Senza questo pulsante l'unico rimedio sarebbe aprire
+              SharePoint e correggere la colonna a mano.
+            */}
+            {corrente.pipeline?.puoSbloccare && (
+              <button className="btn small danger" onClick={() => sblocca()} disabled={occupato}
+                      title="Risulta preso in carico da più di mezz'ora senza essere arrivato: lo rimette fra gli inviabili">
+                {azione === "sblocca" ? <><Rotella /> Sblocco…</> : "⚠ Sblocca: fermo da troppo"}
+              </button>
             )}
             <button className={`btn small ${daScartare.has(corrente.id) ? "danger" : ""}`}
                     onClick={() => segnaScarto()}

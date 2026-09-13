@@ -936,6 +936,10 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
 .cn-stato.st-pronto strong { color: var(--accent); }
 .cn-stato.st-in-attesa  { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel2)); }
 .cn-stato.st-in-attesa strong { color: var(--warn); }
+/* In pubblicazione: il file è già nelle mani della coda e non si può più fermare, quindi si
+   distingue dall'attesa — dove invece si può ancora forzare. */
+.cn-stato.st-in-consegna { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel2)); }
+.cn-stato.st-in-consegna strong { color: var(--accent); }
 .cn-stato.st-pubblicato { border-color: var(--ok, #48c78e); }
 .cn-stato.st-pubblicato strong { color: var(--ok, #48c78e); }
 .cn-stato.st-errore     { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel2)); }
