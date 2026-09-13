@@ -31,16 +31,6 @@ public static class StatoPipeline
         var daInviare = string.Equals(library, "ImagesToSend", System.StringComparison.OrdinalIgnoreCase);
         var inviate = string.Equals(library, "ImagesSent", System.StringComparison.OrdinalIgnoreCase);
 
-        if (testo.StartsWith("ERRORE", System.StringComparison.OrdinalIgnoreCase))
-            return (Errore, "Non riuscito",
-                    "L'ultimo tentativo di pubblicazione e' fallito. Il file resta qui e si puo' ritentare.");
-
-        // Chiesto ma non ancora partito: e' lo stato che prima non si vedeva, e per cui si finiva a
-        // premere "Invia" una seconda volta credendo che il primo non avesse funzionato.
-        if (invia && !inviato)
-            return (InAttesa, "In attesa di invio",
-                    "L'invio e' stato chiesto. La pipeline prende in carico il file entro pochi minuti, oppure si puo' forzare subito.");
-
         // Gia' preso in carico ma ancora qui: chi accoda scrive "Inviato" **prima** di accodare, per
         // impedire che il giro successivo lo riprenda, e il file resta nella libreria di partenza
         // finche' non viene spostato. Senza questo stato ricadeva su "pronto", e l'applicazione
@@ -51,9 +41,28 @@ public static class StatoPipeline
         // ogni ulteriore scrittura. Chiedere anche "Invia" lasciava scoperta la combinazione in cui
         // qualcuno abbassa "Invia" a mano credendo di annullare un invio gia' partito: il file
         // tornava a mostrarsi "pronto" con i pulsanti attivi, che poi fallivano sempre.
+        //
+        // Viene **prima** del testo di errore, e non e' un dettaglio d'ordine: i contrassegni
+        // dicono cosa sta succedendo adesso, la colonna di testo racconta il tentativo precedente.
+        // Un file rimesso in coda dopo un fallimento porta ancora scritto "ERRORE", e finche' era
+        // quella frase a decidere l'applicazione lo mostrava come "non riuscito" con i pulsanti
+        // riattivati -- su un file che stava gia' risalendo. A fermare il doppione restava solo il
+        // rifiuto dello store, cioe' l'ultima barriera invece della prima.
         if (daInviare && inviato)
             return (InConsegna, "In pubblicazione",
                     "Preso in carico: sta salendo ai marketplace. Non si puo' rimandare finche' non ha finito.");
+
+        // Chiesto ma non ancora partito: e' lo stato che prima non si vedeva, e per cui si finiva a
+        // premere "Invia" una seconda volta credendo che il primo non avesse funzionato. Anche
+        // questo batte il testo di errore, per la stessa ragione: un invio appena richiesto e' una
+        // notizia piu' fresca di un fallimento gia' archiviato.
+        if (invia && !inviato)
+            return (InAttesa, "In attesa di invio",
+                    "L'invio e' stato chiesto. La pipeline prende in carico il file entro pochi minuti, oppure si puo' forzare subito.");
+
+        if (testo.StartsWith("ERRORE", System.StringComparison.OrdinalIgnoreCase))
+            return (Errore, "Non riuscito",
+                    "L'ultimo tentativo di pubblicazione e' fallito. Il file resta qui e si puo' ritentare.");
 
         if (inviate)
             return (Pubblicato, "Pubblicato",

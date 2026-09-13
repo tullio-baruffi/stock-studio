@@ -84,8 +84,31 @@ public class StatoPipelineTest
     [Fact]
     public void UnErroreBatteQualunqueAltroSegnale()
     {
-        Assert.Equal(StatoPipeline.Errore, Stato("ImagesToSend", true, true, "ERRORE: 500 - qualcosa"));
-        Assert.Equal(StatoPipeline.Errore, Stato("ImagesSent", true, true, "ERRORE: 500 - qualcosa"));
+        Assert.Equal(StatoPipeline.Errore, Stato("ImagesToSend", false, false, "ERRORE: 500 - qualcosa"));
+        Assert.Equal(StatoPipeline.Errore, Stato("ImagesSent", false, false, "ERRORE: 500 - qualcosa"));
+    }
+
+    /// <summary>
+    /// I contrassegni dicono cosa sta succedendo adesso, la colonna di testo racconta il tentativo
+    /// precedente.
+    ///
+    /// Quando si rimette in coda un file fallito, la frase "ERRORE" resta scritta finche' la catena
+    /// non arriva in fondo. Se fosse quella a decidere, l'applicazione mostrerebbe "non riuscito"
+    /// con i pulsanti riattivati su un file che sta gia' risalendo -- e a fermare il doppione
+    /// resterebbe solo il rifiuto dello store, cioe' l'ultima barriera invece della prima.
+    ///
+    /// Misurato sul campo: tre .eps rimessi in coda dopo un timeout verso Freepik continuavano a
+    /// mostrarsi "non riuscito" mentre erano gia' in volo.
+    /// </summary>
+    [Fact]
+    public void UnRitentativoInCorsoBatteIlTestoDelFallimentoPrecedente()
+    {
+        // Rimesso in coda: preso in carico adesso, la frase e' vecchia.
+        Assert.Equal(StatoPipeline.InConsegna, Stato("ImagesToSend", true, true, "ERRORE: 500 - timeout"));
+        // Reinvio chiesto ma non ancora raccolto.
+        Assert.Equal(StatoPipeline.InAttesa, Stato("ImagesToSend", true, false, "ERRORE: 500 - timeout"));
+        // Fermo davvero: la catena azzera i contrassegni quando fallisce, e allora la frase conta.
+        Assert.Equal(StatoPipeline.Errore, Stato("ImagesToSend", false, false, "ERRORE: 500 - timeout"));
     }
 
     /// <summary>
