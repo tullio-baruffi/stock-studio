@@ -1116,21 +1116,36 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
    di colonne utile dipende dallo schermo, non da un valore deciso qui. */
 .gl-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
 .gl-card { position: relative; display: flex; flex-direction: column; gap: 5px;
-  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 6px;
+  /* Shift+clic seleziona immagini, non parole: senza questo la griglia si riempie di testo blu. */
+  user-select: none; -webkit-user-select: none; }
 .gl-card.sel { border-color: #C8F751; box-shadow: 0 0 0 1px #C8F751 inset; }
 .gl-card.ko { opacity: .5; border-color: var(--err); }
 .gl-shot { padding: 0; border: 0; cursor: pointer; background: #fff; border-radius: 6px;
   overflow: hidden; aspect-ratio: 1; display: grid; place-items: center; }
 .gl-shot img { max-width: 100%; max-height: 100%; object-fit: contain; }
-/* La casella sta sopra l'immagine: una colonna sua toglierebbe spazio proprio a cio' che si guarda. */
+/* La casella sta sopra l'immagine: una colonna sua toglierebbe spazio proprio a cio' che si guarda.
+   Non e' piu' un checkbox di sistema ma un pulsante: serviva tutto il riquadro cliccabile e il
+   controllo su Shift e Ctrl, che una casella nativa dentro una label si lascia sfuggire. */
 .gl-pick { position: absolute; top: 10px; left: 10px; z-index: 2; display: grid; place-items: center;
-  width: 22px; height: 22px; border-radius: 5px; background: rgba(10,10,12,.66); cursor: pointer; }
-.gl-pick input { cursor: pointer; accent-color: #C8F751; }
+  width: 22px; height: 22px; padding: 0; border-radius: 5px; cursor: pointer;
+  background: rgba(10,10,12,.66); border: 1px solid rgba(255,255,255,.3); color: transparent; }
+.gl-pick:hover { border-color: #C8F751; }
+.gl-pick:focus-visible { outline: 2px solid #C8F751; outline-offset: 2px; }
+.gl-pick.on { background: #C8F751; border-color: #C8F751; color: #0d1117; }
+.gl-pick svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.6;
+  stroke-linecap: round; stroke-linejoin: round; }
 .gl-meta { display: flex; align-items: center; gap: 6px; }
 .gl-name { flex: 1; font-size: 11px; color: var(--muted); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .gl-kinds { display: flex; gap: 4px; flex-wrap: wrap; min-height: 16px; }
 .gl-flag { font-size: 9.5px; letter-spacing: .5px; color: var(--err); text-transform: uppercase; }
+
+/* Le scorciatoie di selezione, scritte dove servono: una griglia non le lascia indovinare. */
+.gl-tip { margin: 0; font-size: 11.5px; line-height: 1.95; color: var(--muted); }
+.gl-tip kbd { display: inline-block; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 5px; color: var(--text); }
 
 .gl-bulk { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px;
   flex-wrap: wrap; padding: 8px 10px; border: 1px solid #C8F751; border-radius: 8px;

@@ -25,6 +25,19 @@ import PannelloTracciato from "../components/PannelloTracciato";
  * cancellerebbe, e una cancellazione legata a un singolo tasto è un incidente che aspetta di
  * accadere. Quindi X **non cancella**: segna, e basta. Le segnate si eliminano tutte insieme, con
  * un passaggio esplicito che dice quante sono. Fino a quel momento ogni X si annulla premendola.
+ *
+ * ## Sulla selezione multipla
+ * Le azioni in blocco esistevano già, ma per arrivarci si doveva spuntare una casella alla volta:
+ * su un lotto di duecento immagini simili è mezz'ora di clic, ed è il punto in cui si smette di
+ * usare le azioni in blocco. Quindi la selezione si comporta come in un qualsiasi gestore di file:
+ * **Shift+clic** prende l'intervallo dall'ultima toccata, **Ctrl/Cmd+clic** aggiunge o toglie la
+ * singola, **Ctrl+A** prende tutte quelle mostrate, **Esc** molla tutto.
+ *
+ * I modificatori valgono su tutta la card e non solo sulla casella, perché è la miniatura che si
+ * guarda quando si sceglie: costringere la mira su un quadratino di ventidue pixel avrebbe
+ * riprodotto lo stesso attrito con un gesto diverso. Il clic senza modificatori resta quello di
+ * prima — apre il dettaglio — così chi non conosce le scorciatoie non si trova l'applicazione
+ * cambiata sotto le mani.
  */
 
 
@@ -178,6 +191,80 @@ export default function RevisioneView() {
   const posizione = apertaId === null ? -1 : visibili.findIndex((x) => x.id === apertaId);
   const corrente = posizione >= 0 ? visibili[posizione] : undefined;
 
+  /**
+   * L'ultimo clic che ha deciso una selezione: da lì Shift tira gli intervalli.
+   *
+   * Non basta ricordare *quale* immagine. Serve anche **cosa** si stava facendo — prendere o
+   * lasciare — e com'era la selezione un attimo prima, altrimenti allargare l'intervallo e poi
+   * ripensarci lascerebbe per strada tutte le immagini toccate dal tiro più lungo. Tenendo la
+   * fotografia di partenza, ogni Shift+clic ricalcola da zero: l'intervallo si allunga e si
+   * accorcia come un elastico, e quello che stava fuori resta com'era.
+   *
+   * È un ref e non uno stato perché non cambia niente di ciò che si vede: ridisegnare una griglia
+   * di centinaia di miniature per aggiornare un'ancora invisibile sarebbe lavoro buttato.
+   */
+  const ancora = useRef<{ id: number; seleziona: boolean; base: Set<number> } | null>(null);
+
+  /**
+   * Il clic che seleziona, da solo o con i modificatori.
+   *
+   * - clic secco sulla casella, oppure **Ctrl/Cmd+clic** su tutta la card: commuta quella immagine
+   *   e sposta lì l'ancora;
+   * - **Shift+clic**: prende — o lascia, se l'ancora stava lasciando — l'intero intervallo fra
+   *   l'ancora e l'immagine cliccata.
+   *
+   * L'intervallo si misura su `visibili`, non su `items`: l'ordine che conta è quello che si ha
+   * sotto gli occhi, perché è guardando la griglia che si decide dove comincia e dove finisce. Se
+   * l'ancora nel frattempo è uscita dai filtri non c'è nessun elastico da tirare, e Shift si
+   * comporta come un clic qualunque invece di non fare niente.
+   */
+  const clicSelezione = useCallback((id: number, mod: { shiftKey: boolean }) => {
+    const a = ancora.current;
+    if (mod.shiftKey && a) {
+      const da = visibili.findIndex((x) => x.id === a.id);
+      const al = visibili.findIndex((x) => x.id === id);
+      if (da >= 0 && al >= 0) {
+        const n = new Set(a.base);
+        for (const it of visibili.slice(Math.min(da, al), Math.max(da, al) + 1)) {
+          if (a.seleziona) n.add(it.id); else n.delete(it.id);
+        }
+        setSelezione(n);
+        return;
+      }
+    }
+
+    const seleziona = !selezione.has(id);
+    const n = new Set(selezione);
+    if (seleziona) n.add(id); else n.delete(id);
+    ancora.current = { id, seleziona, base: new Set(n) };
+    setSelezione(n);
+  }, [visibili, selezione]);
+
+  /** Via tutte, ancora compresa: un elastico teso da un capo che non si vede più disorienta. */
+  const azzeraSelezione = useCallback(() => {
+    ancora.current = null;
+    setSelezione(new Set());
+  }, []);
+
+  /**
+   * Tutte quelle che la griglia sta mostrando, non le migliaia rimaste in libreria.
+   *
+   * La differenza va detta e si vede: il pulsante porta il numero, così nessuno crede di aver
+   * preso il magazzino intero quando ha preso le ventiquattro scaricate finora.
+   */
+  const selezionaTutte = useCallback(() => {
+    ancora.current = null;
+    setSelezione(new Set(visibili.map((x) => x.id)));
+  }, [visibili]);
+
+  /**
+   * Se c'è una selezione in corso.
+   *
+   * Un booleano e non l'insieme: le scorciatoie da tastiera lo tengono fra le dipendenze, e
+   * passare l'insieme vorrebbe dire staccare e riattaccare l'ascoltatore a ogni singolo clic.
+   */
+  const selezioneAttiva = selezione.size > 0;
+
   const leggi = useCallback(async (pageToken: string | null, azzera: boolean) => {
     const mia = ++richiesta.current;
     setCaricamento(true);
@@ -225,22 +312,22 @@ export default function RevisioneView() {
   const ricarica = useCallback(() => {
     originali.current.clear();
     setApertaId(null);
-    setSelezione(new Set());
+    azzeraSelezione();
     setDaScartare(new Set());
     setToken(null);
     setAltre(true);
     leggi(null, true);
-  }, [leggi]);
+  }, [leggi, azzeraSelezione]);
 
   // Cambiare libreria o testo cercato riparte da capo: la pagina di prima non c'entra più niente.
   useEffect(() => {
     originali.current.clear();
     setApertaId(null);
-    setSelezione(new Set());
+    azzeraSelezione();
     setToken(null);
     setAltre(true);
     leggi(null, true);
-  }, [leggi]);
+  }, [leggi, azzeraSelezione]);
 
   // Quanto è grande lo stadio, per dire a che punto si è di un magazzino di migliaia.
   useEffect(() => {
@@ -289,6 +376,7 @@ export default function RevisioneView() {
   const apri = (id: number) => { setApertaId(id); setZoom(false); setConsegna(null); setNota(""); };
   const chiudi = () => { setApertaId(null); setZoom(false); setConsegna(null); setNota(""); };
 
+  /** Dentro o fuori da un insieme. Serve ancora alle segnate, che si toccano una per una. */
   const commuta = (set: Set<number>, id: number) => {
     const n = new Set(set);
     if (n.has(id)) n.delete(id); else n.add(id);
@@ -705,7 +793,7 @@ export default function RevisioneView() {
     // Solo quelle riuscite lasciano l'elenco: togliere anche le altre nasconderebbe i rifiuti
     // della validazione, che sono proprio quelli da rivedere.
     setApprovate((n) => n + fatte);
-    setSelezione(new Set());
+    azzeraSelezione();
     setOccupato(false);
     setAzione(null);
     ricarica();
@@ -804,9 +892,26 @@ export default function RevisioneView() {
       t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 
     const onKey = (e: KeyboardEvent) => {
-      if (scriveInUnCampo(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (scriveInUnCampo(e.target)) return;
       const k = e.key.toLowerCase();
+
+      /*
+        Ctrl/Cmd+A nella galleria prende tutte quelle mostrate. È l'unica scorciatoia che passa
+        con un modificatore premuto, quindi va intercettata prima dello sbarramento qui sotto: il
+        "seleziona tutto" del browser su una griglia di miniature non serve a nessuno, mentre
+        questo è esattamente il gesto che chi seleziona in blocco prova per primo.
+      */
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && k === "a" && apertaId === null && visibili.length > 0) {
+        e.preventDefault();
+        selezionaTutte();
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (k === "escape" && apertaId !== null) { e.preventDefault(); chiudi(); return; }
+      // In galleria Esc non ha una finestra da chiudere: molla la selezione, che è la via d'uscita
+      // dal blocco selezionato per sbaglio.
+      if (k === "escape") { if (selezioneAttiva) { e.preventDefault(); azzeraSelezione(); } return; }
       if (apertaId === null) return;
       if (k === "arrowright" || k === "arrowdown") { e.preventDefault(); vai(1); }
       else if (k === "arrowleft" || k === "arrowup") { e.preventDefault(); vai(-1); }
@@ -818,7 +923,8 @@ export default function RevisioneView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [apertaId, vai, approva, pubblicaOra, segnaScarto, rigenera]);
+  }, [apertaId, vai, approva, pubblicaOra, segnaScarto, rigenera,
+      visibili.length, selezioneAttiva, selezionaTutte, azzeraSelezione]);
 
   /**
    * Una data leggibile, o niente.
@@ -1017,8 +1123,26 @@ export default function RevisioneView() {
               >
                 Segna per lo scarto
               </button>
-              <button className="btn small ghost" onClick={() => setSelezione(new Set())}>Deseleziona</button>
+              {selezione.size < visibili.length && (
+                <button className="btn small ghost" onClick={selezionaTutte}
+                        title="Prende tutte quelle mostrate adesso, non quelle ancora da scaricare">
+                  Tutte ({visibili.length})
+                </button>
+              )}
+              <button className="btn small ghost" onClick={azzeraSelezione}>Deseleziona</button>
             </div>
+          )}
+
+          {/*
+            Le scorciatoie vanno scritte dove si usano: nessuno prova Shift+clic su una griglia per
+            indovinare se funziona, e finché non lo sa seleziona mille immagini una casella alla volta.
+          */}
+          {items.length > 0 && (
+            <p className="gl-tip">
+              Clic sulla miniatura per aprirla · <kbd>Ctrl</kbd> (o <kbd>⌘</kbd>) + clic per
+              selezionare · <kbd>Shift</kbd> + clic per l'intervallo dall'ultima toccata ·{" "}
+              <kbd>Ctrl</kbd> <kbd>A</kbd> tutte · <kbd>Esc</kbd> nessuna
+            </p>
           )}
 
           {/*
@@ -1040,15 +1164,37 @@ export default function RevisioneView() {
               <article
                 key={it.id}
                 className={`gl-card ${daScartare.has(it.id) ? "ko" : ""} ${selezione.has(it.id) ? "sel" : ""}`}
+                /*
+                  I modificatori si raccolgono qui, in discesa, prima che il clic arrivi alla
+                  casella o alla miniatura. Così Ctrl+clic e Shift+clic valgono su **tutta** la
+                  card — bordo, nome, targhette — e non solo sui due centimetri quadrati della
+                  casella, e soprattutto la miniatura non si apre quando la si voleva solo
+                  selezionare: senza questo, ogni Shift+clic sbagliato costa un viaggio nel
+                  dettaglio e un ritorno indietro.
+                */
+                onClickCapture={(e) => {
+                  if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  clicSelezione(it.id, e);
+                }}
+                /*
+                  Per il browser Shift+clic significa "estendi la selezione del testo fino a qui":
+                  senza fermarlo, ogni intervallo lascerebbe mezza griglia evidenziata in blu.
+                */
+                onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
               >
-                <label className="gl-pick">
-                  <input
-                    type="checkbox"
-                    checked={selezione.has(it.id)}
-                    onChange={() => setSelezione((s) => commuta(s, it.id))}
-                    aria-label={`Seleziona ${it.fileName}`}
-                  />
-                </label>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={selezione.has(it.id)}
+                  className={`gl-pick ${selezione.has(it.id) ? "on" : ""}`}
+                  onClick={() => clicSelezione(it.id, { shiftKey: false })}
+                  aria-label={`Seleziona ${it.fileName}`}
+                  title="Seleziona · Shift+clic per l'intervallo · Ctrl+clic ovunque sulla card"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.6l3.2 3.2L12.8 5" /></svg>
+                </button>
 
                 <button className="gl-shot" onClick={() => apri(it.id)} title={it.fileName}>
                   <AuthImage src={it.previewUrl} alt={it.title || it.fileName} />

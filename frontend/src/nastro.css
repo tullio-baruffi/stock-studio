@@ -281,6 +281,11 @@
 [data-veste="nastro"] .gl-bulk { border-radius: 2px; background: #08080a; }
 [data-veste="nastro"] .gl-bulk-n { letter-spacing: 1.4px; text-transform: uppercase; font-size: 10.5px; }
 [data-veste="nastro"] .gl-more { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; }
+/* Le scorciatoie di selezione parlano la stessa lingua dei tasti del dettaglio: stessi spigoli,
+   stesso grigio, così si leggono come comandi e non come una didascalia. */
+[data-veste="nastro"] .gl-tip { font-size: 10.5px; letter-spacing: .3px; }
+[data-veste="nastro"] .gl-tip kbd { border-radius: 2px; font-size: 10px; letter-spacing: 1px;
+  border-bottom-width: 1px; color: var(--muted); }
 [data-veste="nastro"] .bo-score { border-radius: 2px; font-family: var(--mono); }
 
 /* ---- Tabelle e liste ------------------------------------------------------------------- */

@@ -63,6 +63,50 @@ namespace StockStudio.Shared.Vettoriale
             /// maschere deve guardare qui, non fidarsi dell'indice.
             /// </summary>
             public bool[] Opaco { get; set; } = new bool[0];
+
+            /// <summary>
+            /// Quante tinte c'erano a ogni passaggio, per capire dove si perdono.
+            ///
+            /// ## Perche' serve
+            /// Perche' "ne ho chieste quaranta e ne sono uscite undici" e' un'osservazione, non una
+            /// diagnosi: fra la richiesta e il risultato ci sono quattro passaggi che possono
+            /// accorciare la tavolozza, e senza sapere quale ha morso si tira a indovinare. E'
+            /// successo davvero -- sul castoro si sospettava l'unione delle gemelle, che invece era
+            /// gia' disattivata, e il tempo speso li' era tempo perso.
+            ///
+            /// Non e' solo uno strumento da banco: chi guarda un tracciato a poche tinte dopo
+            /// averne chieste tante merita di sapere che non sono state ignorate, sono state
+            /// riconosciute come frange di contorno.
+            /// </summary>
+            public Passaggi Storia { get; set; } = new Passaggi();
+        }
+
+        /// <summary>Quante tinte sopravvivono a ciascun passaggio della riduzione.</summary>
+        public class Passaggi
+        {
+            /// <summary>Quante ne ha chieste chi traccia.</summary>
+            public int Chieste;
+            /// <summary>Quante ne ha trovate il taglio mediano, prima di ogni potatura.</summary>
+            public int DalTaglio;
+            /// <summary>Dopo aver recuperato i colori piccoli che l'ottimizzazione aveva ignorato.</summary>
+            public int DopoIDimenticati;
+            /// <summary>Dopo aver fuso le tinte che nessuno distingue.</summary>
+            public int DopoLeGemelle;
+            /// <summary>Dopo aver rimesso insieme la stessa tinta spezzata in due.</summary>
+            public int DopoLeSpezzate;
+            /// <summary>Dopo aver tolto le tinte che descrivono una frangia invece di una zona.</summary>
+            public int DopoLeFrange;
+            /// <summary>Con che soglia si sono fuse le gemelle: vedi <see cref="SogliaGemelle"/>.</summary>
+            public double Gemelle;
+
+            public override string ToString()
+            {
+                return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "chieste={0} taglio={1} +dimenticati={2} -gemelle={3} (soglia {6:0.0}) " +
+                    "-spezzate={4} -frange={5}",
+                    Chieste, DalTaglio, DopoIDimenticati, DopoLeGemelle, DopoLeSpezzate,
+                    DopoLeFrange, Gemelle);
+            }
         }
 
         /// <summary>
@@ -161,7 +205,8 @@ namespace StockStudio.Shared.Vettoriale
         /// 46% dell'immagine ed era la prima voce della tavolozza.
         /// </param>
         public static Esito Riduci(byte[] rgb, int larghezza, int altezza, int quanti,
-                                   double sogliaUnione = UnionePredefinita, bool[]? opachi = null)
+                                   double sogliaUnione = UnionePredefinita, bool[]? opachi = null,
+                                   double? sogliaGemelle = null)
         {
             if (rgb == null) throw new ArgumentNullException("rgb");
             if (quanti < 2) quanti = 2;
@@ -268,6 +313,7 @@ namespace StockStudio.Shared.Vettoriale
             // misurato: un pesce arancione su fondo marrone usciva rosa slavato con otto tinte,
             // e con la stessa tavolozza raffinata esce arancione.
             Raffina(istogramma, colori);
+            var storia = new Passaggi { Chieste = quanti, DalTaglio = colori.Length };
 
             // Poi si ricontrolla se e' rimasto fuori qualcosa di importante. Serve perche' sia il
             // taglio mediano sia Lloyd minimizzano l'errore *totale*, e un oggetto piccolo non
@@ -276,13 +322,20 @@ namespace StockStudio.Shared.Vettoriale
             // dandogliene sedici -- misurato sull'immagine vera, dove le tinte in piu' finivano
             // tutte su marroni intermedi mentre il pesce restava beige.
             SalvaIColoriDimenticati(istogramma, colori, pixel);
+            storia.DopoIDimenticati = colori.Length;
 
             // Le tinte quasi identiche fra loro si fondono. Non e' un'ottimizzazione: due tinte
             // che nessuno distingue creano dentro una campitura piatta un confine che non esiste,
             // potrace lo traccia, e ne esce una banda fantasma -- misurato, una banda larga
             // sull'1,8% dell'immagine dentro il fondo bianco. Meglio poche tinte pulite che molte
             // torbide.
-            colori = UnisciGemelle(istogramma, colori);
+            // La soglia si misura **prima** di fondere: dopo, la tavolozza e' gia' rada e il passo
+            // misurato sarebbe quello che la fusione ha appena prodotto, non quello su cui andava
+            // decisa.
+            var gemelle = sogliaGemelle ?? SogliaGemelle(quanti);
+            storia.Gemelle = gemelle;
+            colori = UnisciGemelle(istogramma, colori, gemelle);
+            storia.DopoLeGemelle = colori.Length;
 
             // La fusione libera posti, e i posti liberati vanno spesi: chi ha chiesto sedici tinte
             // ne vuole sedici, e i colori rimasti fuori sono proprio quelli piccoli e saturi che
@@ -332,7 +385,9 @@ namespace StockStudio.Shared.Vettoriale
             // riconosciuta come tale va tolta, ma una linea spaccata in due va ricucita, non
             // dimezzata.
             colori = FondiTinteSpezzate(colori, rgb, indici, larghezza, altezza, pixel, sogliaUnione);
+            storia.DopoLeSpezzate = colori.Length;
             colori = TogliNastriIntermedi(colori, indici, opachi, larghezza, altezza, pixel);
+            storia.DopoLeFrange = colori.Length;
 
             var opaco = opachi ?? TuttiOpachi(pixel);
 
@@ -345,7 +400,8 @@ namespace StockStudio.Shared.Vettoriale
             for (var i = 0; i < pixel; i++) if (opaco[i]) conteggi[indici[i]]++;
             for (var i = 0; i < colori.Length; i++) colori[i].Pixel = conteggi[i];
 
-            return new Esito { Colori = colori, Indici = indici, SuBordo = suBordo, Opaco = opaco };
+            return new Esito { Colori = colori, Indici = indici, SuBordo = suBordo, Opaco = opaco,
+                               Storia = storia };
         }
 
         /// <summary>
@@ -514,6 +570,15 @@ namespace StockStudio.Shared.Vettoriale
             // Sotto questo numero di campioni puliti la misura non e' attendibile e non si fonde.
             const int CampioniMinimi = 30;
 
+            /// Quanto due tinte devono toccarsi, in frazione del perimetro della piu' piccola,
+            /// perche' l'intreccio valga da solo come prova che sono la stessa struttura spezzata.
+            ///
+            /// Tre quarti: e' tanto. Due zone vicine ma distinte -- un'ombra accanto alla sua
+            /// campitura -- condividono una linea sola e stanno molto sotto; due meta' dello
+            /// stesso tratto si toccano lungo quasi tutta la loro lunghezza. Serve alto perche'
+            /// questa prova sostituisce quella sui pixel, che e' la piu' severa delle due.
+            const double IntrecciateDavvero = 0.75;
+
             // Tre giri: fondere due meta' puo' rendere evidente una terza scheggia della stessa
             // struttura. Oltre il terzo non e' mai cambiato niente, e un ciclo senza tetto su una
             // tavolozza degenere non finirebbe.
@@ -607,8 +672,24 @@ namespace StockStudio.Shared.Vettoriale
                         // Seconda prova, sui pixel di partenza: quel confine esiste davvero? Senza
                         // questa, su un campione di 52 illustrazioni venti confini veri su
                         // cinquantanove sarebbero stati cancellati.
-                        if (campioni[a * n + b] < CampioniMinimi) continue;
-                        if (salto[a * n + b] / campioni[a * n + b] >= distanza) continue;
+                        //
+                        // Quando i campioni non bastano c'e' pero' un secondo caso, e va distinto:
+                        // non si e' potuto misurare **perche' la struttura e' piu' sottile della
+                        // distanza di campionamento**. Astenersi li' vuol dire lasciare spezzato
+                        // proprio cio' che si spezza piu' facilmente -- un tratto di contorno
+                        // dipinto a mano, che lungo la sua lunghezza cambia di scuro e finisce
+                        // spartito fra due tinte vicine. E' il difetto del contorno a tratteggio:
+                        // la balena aveva il dorso disegnato a trattini scuri e chiari alternati,
+                        // mentre Illustrator lo rende con un tratto unico.
+                        //
+                        // Si distingue guardando **quanto le due si intrecciano**: due meta' dello
+                        // stesso tratto si toccano lungo quasi tutto il loro contorno, due zone
+                        // diverse si toccano lungo una linea sola. Sopra i tre quarti non e' un
+                        // confine fra due cose: e' una cosa sola contata due volte.
+                        if (campioni[a * n + b] < CampioniMinimi
+                            && !(quota >= IntrecciateDavvero && distanza < MaiOltre / 2)) continue;
+                        if (campioni[a * n + b] >= CampioniMinimi
+                            && salto[a * n + b] / campioni[a * n + b] >= distanza) continue;
 
                         migliore = rapporto;
                         // Sopravvive la piu' estesa; il fondo (indice 0) non si tocca mai.
@@ -1157,10 +1238,35 @@ namespace StockStudio.Shared.Vettoriale
                     if (y < altezza - 1) Conta(i + larghezza, mia, indici, opaco, haOpaco, confine);
                 }
 
+                // A chi cedere il granello.
+                //
+                // Prima si guardava solo **con chi confina di piu'**, ed e' quel che rompeva i
+                // contorni sottili. Un tratto di contorno dipinto a mano cambia di scuro lungo la
+                // sua lunghezza e finisce spartito fra due tinte vicine; i tratti dell'una
+                // diventano macchioline sotto soglia, e circondate come sono dal corpo chiaro
+                // venivano cedute **al chiaro**. Il contorno usciva a tratteggio -- misurato sulla
+                // balena: con i granelli spenti il dorso e' una linea continua, con la taratura di
+                // serie e' fatto di trattini scuri e chiari alternati.
+                //
+                // Ora si tiene conto anche di **quanto cambia il disegno**: cedere un pixel scuro a
+                // un altro scuro non si vede, cederlo al chiaro apre un buco. Si sceglie chi
+                // minimizza la distanza di colore divisa per il confine condiviso -- lo stesso
+                // rapporto con cui si decidono le fusioni di tinte piu' sopra. Una vicina molto
+                // simile vince anche con un confine corto; a parita' di colore vince chi circonda
+                // di piu', che era il criterio di prima.
                 var vincitrice = -1;
-                var quanto = 0;
+                var migliorRapporto = double.MaxValue;
                 for (var c = 0; c < confine.Length; c++)
-                    if (confine[c] > quanto) { quanto = confine[c]; vincitrice = c; }
+                {
+                    if (confine[c] <= 0) continue;
+                    double dr = esito.Colori[c].R - esito.Colori[mia].R,
+                           dg = esito.Colori[c].G - esito.Colori[mia].G,
+                           db = esito.Colori[c].B - esito.Colori[mia].B;
+                    // Il +1 evita che due tinte identiche diano rapporto zero e si scelga a caso
+                    // fra loro: con l'uno a denominatore vince comunque quella che confina di piu'.
+                    var r = (dr * dr + dg * dg + db * db + 1.0) / confine[c];
+                    if (r < migliorRapporto) { migliorRapporto = r; vincitrice = c; }
+                }
                 if (vincitrice < 0) continue;   // isolata nel trasparente: non si tocca
 
                 foreach (var i in lista) indici[i] = (byte)vincitrice;
@@ -1284,10 +1390,11 @@ namespace StockStudio.Shared.Vettoriale
         ///
         /// Si tiene la tinta piu' estesa delle due, e si rimette a fuoco quel che resta.
         /// </summary>
-        private static Colore[] UnisciGemelle(Dictionary<int, int> istogramma, Colore[] colori)
+        private static Colore[] UnisciGemelle(Dictionary<int, int> istogramma, Colore[] colori,
+                                              double soglia)
         {
-            // Sotto questa distanza due colori sono lo stesso colore: circa dodici livelli per
-            // canale, il limite sotto cui l'occhio non separa due campiture affiancate.
+            // Sotto questa distanza due colori sono lo stesso colore. Il valore arriva da
+            // <see cref="SogliaGemelle"/>: vedi li' perche' non e' piu' una costante.
             //
             // Il valore e' stato alzato a diciotto per far combaciare due tinte che descrivevano
             // la stessa ombreggiatura in un caso di prova, e su quel caso funzionava. Sull'immagine
@@ -1295,7 +1402,7 @@ namespace StockStudio.Shared.Vettoriale
             // piu' larga ma fuori da questa -- e gli orsi hanno perso il volume. E' il rischio di
             // tarare su un caso costruito: la soglia larga risolveva un difetto che avevo
             // fabbricato io e ne creava uno che l'utente vedeva davvero.
-            const double StessoColore = 12.0 * 12.0 * 3;
+            var StessoColore = soglia * soglia * 3;
 
             // Si fonde, si rimette a fuoco, e **si ricontrolla**. Il giro serve perche' Raffina
             // sposta le tinte superstiti verso il centro dei pixel che hanno ereditato: due tinte
@@ -1347,6 +1454,63 @@ namespace StockStudio.Shared.Vettoriale
 
             return cambiata ? vivi.ToArray() : colori;
         }
+
+        /// <summary>
+        /// Quanto devono essere vicine due tinte per essere considerate la stessa, in livelli per
+        /// canale, **in funzione di quante se ne sono chieste**.
+        ///
+        /// ## Il difetto che risolve
+        /// Era una costante: dodici livelli, sempre. Il che vuol dire che chiedere piu' tinte non
+        /// ne dava piu', perche' quelle in piu' nascono per forza vicine fra loro e la fusione le
+        /// rimetteva subito insieme. Misurato sull'illustrazione dei castori, tutta di marroni:
+        ///     chieste 24 -> il taglio ne trova 24 -> la fusione le porta a 13
+        ///     chieste 40 -> il taglio ne trova 40 -> la fusione le porta a 15
+        /// Sedici tinte in piu' ne producevano due, e il cursore delle tinte era quindi un comando
+        /// che non comandava. Illustrator, sulla stessa immagine, ne tiene sedici; noi ne
+        /// consegnavamo otto, ed e' per questo che la macchia sul naso usciva a frammenti invece
+        /// che intera: non c'era la tinta intermedia per descriverla.
+        ///
+        /// ## Perche' dipende dal numero chiesto
+        /// Perche' e' geometria, non gusto. Le tinte stanno dentro la gamma di colori
+        /// dell'immagine: piu' se ne chiedono, piu' vicine cadono per forza, e la distanza tipica
+        /// fra due vicine scende come la radice cubica del numero -- lo spazio dei colori ha tre
+        /// dimensioni. Una soglia fissa e' quindi generosa quando le tinte sono poche e diventa
+        /// una falce quando sono tante.
+        ///
+        /// Provata anche una legge che guardasse **quanto e' stretta la tavolozza costruita**
+        /// invece del numero chiesto, misurando il passo tipico fra tinte vicine: SCARTATA. Sulle
+        /// due illustrazioni di prova dava 11,8 e 11,1 -- praticamente la costante di prima su
+        /// entrambe -- perche' il passo mediano e' dominato dalle tinte ben separate e non si
+        /// accorge di quelle pigiate. Misurava qualcosa di vero, ma non quel che serviva.
+        ///
+        /// ## Perche' non puo' mai salire sopra dodici
+        /// Perche' alzarla e' la direzione che ha gia' fatto danni: portata a diciotto, su
+        /// un'illustrazione di orsi toglieva un marrone intermedio e le figure perdevano il
+        /// volume. Qui puo' solo **scendere**, e solo per chi chiede piu' tinte di quante la
+        /// sonda ne preveda -- cioe' esattamente chi sta chiedendo di distinguere di piu'.
+        /// E' pubblica perche' e' una regola, non un dettaglio: dice quando due tinte diventano
+        /// una, ed e' la differenza fra un cursore che comanda e uno che non comanda. Una regola
+        /// del genere va poter essere verificata da un test senza passare da un'immagine.
+        /// </summary>
+        public static double SogliaGemelle(int quante)
+        {
+            if (quante <= RiferimentoGemelle) return GemelleMassima;
+            var s = GemelleMassima * Math.Pow((double)RiferimentoGemelle / quante, 1.0 / 3.0);
+            // Sotto i sei livelli non si sta piu' distinguendo: si sta tenendo in tavolozza il
+            // rumore di quantizzazione, che poi diventa banda fantasma dentro una campitura piatta.
+            return s < 6.0 ? 6.0 : s;
+        }
+
+        /// <summary>La soglia di serie, in livelli per canale: quella misurata sugli orsi.</summary>
+        private const double GemelleMassima = 12.0;
+
+        /// <summary>
+        /// Fino a quante tinte la soglia resta quella di serie.
+        ///
+        /// Sotto questa richiesta nessuno sta chiedendo di distinguere di piu', e non c'e' motivo
+        /// di cambiare un comportamento misurato. Sopra, la soglia scende.
+        /// </summary>
+        private const int RiferimentoGemelle = 16;
 
         /// <summary>
         /// La tinta piu' vicina a una casella di colore, calcolata alla prima richiesta e poi

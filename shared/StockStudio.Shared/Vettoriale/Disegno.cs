@@ -250,7 +250,25 @@ namespace StockStudio.Shared.Vettoriale
                 p.RiduzioneRumore = (int)Math.Round(Limita(rumore, 0, p.RiduzioneRumore));
             }
 
-            p.NumeroColori = (int)Math.Round(Limita(m.Tinte * 1.5, 6, 48));
+            // Quante tinte chiedere, a partire da quante ne distingue la sonda.
+            //
+            // Il fattore era uno e mezzo, e il commento diceva "chiederne molte di piu' non ne
+            // inventa e costa tempo". Era vero, ma per un motivo sbagliato: non ne inventava
+            // perche' la fusione delle gemelle aveva una soglia fissa e rimetteva subito insieme
+            // tutto quel che si chiedeva in piu' (vedi Tavolozza.SogliaGemelle). Era una
+            // conclusione tratta da un difetto -- il cursore delle tinte non comandava, e la
+            // regola si era adattata a un comando che non funzionava.
+            //
+            // Ora che la soglia si stringe quando si chiedono piu' tinte, chiederne di piu' ne
+            // produce davvero di piu'. Misurato, a parita' di tutto il resto:
+            //     castoro  chieste 14 -> 8 tinte      chieste 24 -> 11 tinte
+            //     balena   chieste 21 -> 16 tinte     chieste 35 -> 21 tinte
+            // (Illustrator, sulle stesse due: 16 e 24.)
+            //
+            // Due e mezzo invece di un numero fisso perche' il fattore protegge il caso opposto:
+            // su un line art a due tinte la sonda ne conta due e se ne chiedono cinque, non
+            // ventiquattro -- e le frange di antialiasing restano fuori dalla tavolozza.
+            p.NumeroColori = (int)Math.Round(Limita(m.Tinte * 2.5, 6, 48));
 
             // La fedelta' non puo' essere paragonabile allo spessore delle strutture sottili.
             //
