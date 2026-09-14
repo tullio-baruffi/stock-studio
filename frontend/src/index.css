@@ -524,6 +524,17 @@ code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-siz
   (rivettorializzazione), e due disposizioni scritte a mano divergerebbero alla prima aggiunta.
 */
 .tracciato-pannello { width: 100%; }
+/* Il selettore dei preset, sopra i cursori e staccato da loro: è una scelta di genere
+   diversa, e attaccarlo alla griglia lo farebbe leggere come un decimo parametro. */
+.tracciato-preset {
+  display: grid; gap: 4px; margin-bottom: 14px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border, #e3e3e3);
+}
+.tracciato-preset select {
+  /* Largo ma non sconfinato: i nomi dei preset sono corti, e un menu a tutta riga
+     su uno schermo grande allontana l'etichetta dal valore. */
+  max-width: 340px; padding: 6px 8px; font-size: 14px;
+}
 .tracciato-campi {
   display: grid; gap: 14px 20px;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

@@ -102,6 +102,14 @@ public class JobsController : ControllerBase
         }
 
         var scelti = modulo?.Su(_vectorize.Value.Tracciato);
+        var preset = modulo?.PresetScelto;
+
+        // Un preset non porta solo i nove numeri: porta anche **come** va tracciata l'immagine.
+        // Meta' dei preset dell'elenco sono silhouette in bianco e nero, e sceglierli senza che la
+        // modalita' li segua vorrebbe dire cliccare "Silhouette" e ricevere un disegno a colori.
+        // Quel che chi carica ha detto a voce resta piu' forte: se la pagina manda anche la
+        // modalita', comanda quella.
+        var modalita = !string.IsNullOrWhiteSpace(mode) ? mode : preset?.ModalitaTracciato;
 
         var accepted = new List<object>();
         var rejected = new List<object>();
@@ -117,9 +125,11 @@ public class JobsController : ControllerBase
                 if (thresholds != null && i < thresholds.Count
                     && int.TryParse(thresholds[i], out var t) && t is >= 0 and <= 255)
                     threshold = t;
+                // La soglia del preset vale solo dove non ce n'e' una decisa guardando l'anteprima.
+                threshold ??= preset?.Soglia;
 
                 await using var stream = f.OpenReadStream();
-                var r = await _handoff.HandOffAsync(f.FileName, stream, mode ?? "vector", threshold,
+                var r = await _handoff.HandOffAsync(f.FileName, stream, modalita, threshold,
                                                     modulo?.Colori, modulo?.Unione, scelti, ct);
                 accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold });
             }
@@ -144,6 +154,8 @@ public class JobsController : ControllerBase
             // scelto. Null quando non e' stato scelto niente e valgono i predefiniti.
             tracciato = scelti == null ? null : new
             {
+                preset = preset?.Codice,
+                grigi = scelti.ScalaDiGrigi,
                 colori = scelti.NumeroColori,
                 unione = scelti.SogliaUnione,
                 rumore = scelti.RiduzioneRumore,

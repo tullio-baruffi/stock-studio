@@ -1331,6 +1331,21 @@ public class BackofficeController : ControllerBase
             // cui scegliere -- la veste classica, e i ritracciamenti di gruppo, che sono poi il
             // posto dove passa la maggior parte delle immagini. Vedi Disegno.Consiglia.
             var scelti = tracciato?.Su(_vectorize.Value.Tracciato);
+            var preset = tracciato?.PresetScelto;
+            // Un preset in bianco e nero non porta numeri di tracciato -- ne porta la modalita' e
+            // la soglia. Senza questo, scegliere "Silhouette" nella finestra avrebbe cambiato
+            // l'elenco e non il disegno.
+            var colore = Modalita.ColoreImposto(preset?.ModalitaTracciato);
+            var soglia = preset?.Soglia;
+
+            // Un preset che dice "automatico" non porta numeri **apposta**: deve lasciare che la
+            // misura sull'immagine faccia il suo mestiere, non congelarsi sui predefiniti.
+            if (preset != null && preset.MisuraLImmagine) scelti = null;
+
+            // Sui preset in bianco e nero non si misura: quelli portano una soglia, non dei numeri
+            // di tracciato, e `Su()` restituisce comunque la taratura configurata perche' un preset
+            // scelto conta gia' come "qualcosa e' stato scelto". Il disegno lo fa la soglia.
+
             var daMisura = scelti == null;
             if (daMisura)
             {
@@ -1346,7 +1361,8 @@ public class BackofficeController : ControllerBase
             }
 
             var vr = await _vettorizzatore.VectorizeAsync(sorgente, lavoro, "tracciato", ct,
-                new VectorizeOverride(Tracciato: scelti));
+                new VectorizeOverride(AutoThreshold: soglia.HasValue ? false : null,
+                                      Threshold: soglia, Colore: colore, Tracciato: scelti));
 
             var riscritte = new List<ConsegnaRiscritta>();
             foreach (var v in vettoriali)

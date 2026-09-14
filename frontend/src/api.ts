@@ -78,11 +78,45 @@ export type ParametriTracciato = {
   giri?: number;
   tolleranza?: number;
   angolo?: number;
+  /** Togliere il colore e tracciare i soli valori. Lo accende il preset «Scala di grigi». */
+  grigi?: boolean;
+  /**
+   * Il preset scelto, se ne è stato scelto uno: vedi `Preset` lato servizio.
+   *
+   * Non è un decimo cursore ma **da dove si parte**: i numeri qui sopra continuano a valere e si
+   * sovrappongono a quelli del preset. Chi sceglie «3 colori» e poi alza i granelli ottiene i tre
+   * colori con i suoi granelli, che è l'unico modo perché un preset non diventi una gabbia.
+   */
+  preset?: string;
 };
+
+/**
+ * Una taratura già pronta, con un nome e un mestiere.
+ *
+ * I nomi ricalcano quelli di Illustrator; **i numeri no**, e il servizio lo dichiara: Adobe non
+ * pubblica i valori dei propri preset da nessuna parte. Questi sono la nostra lettura, misurata
+ * sul nostro motore.
+ */
+export type PresetTracciato = {
+  codice: string;
+  nome: string;
+  famiglia: string;
+  descrizione: string;
+  quando: string;
+  /** "auto", "vector" o "colore": un preset porta con sé anche come va tracciata l'immagine. */
+  modalita: string;
+  /** Vero solo per l'automatico, dove i numeri si misurano sull'immagine invece di essere scritti. */
+  automatico: boolean;
+  /** I numeri veri, o null quando si misurano sull'immagine. */
+  valori: Required<Omit<ParametriTracciato, "preset">> | null;
+};
+
+/** I nomi dei nove parametri che sono numeri, cioè quelli che hanno un cursore. */
+export type NomeCampoTracciato = keyof Required<Omit<ParametriTracciato, "preset" | "grigi">>;
 
 /** Un cursore del pannello del tracciato, così com'è descritto dal servizio. */
 export type CampoTracciato = {
-  nome: keyof ParametriTracciato;
+  nome: NomeCampoTracciato;
   etichetta: string;
   min: number;
   max: number;
@@ -100,8 +134,11 @@ export type CampoTracciato = {
 export type ConfigTracciato = {
   /** Il lato lungo a cui le misure in pixel si riferiscono: vedi ParametriTracciato.PerImmagine. */
   riferimento: number;
-  valori: Required<ParametriTracciato>;
+  /** I nove numeri configurati. Niente `preset`: questi sono i valori, non una scelta. */
+  valori: Required<Omit<ParametriTracciato, "preset">>;
   campi: CampoTracciato[];
+  preset: PresetTracciato[];
+  presetPredefinito: string;
 };
 
 /** Che taratura chiede una singola immagine, misurata guardandola. */

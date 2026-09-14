@@ -63,18 +63,25 @@ public class ConfigurationController : ControllerBase
         return Ok(new
         {
             riferimento = ParametriTracciato.LatoDiRiferimento,
-            valori = new
+            // I preset stanno qui e non scritti nella pagina per la stessa ragione dei predefiniti:
+            // sono una proprieta' del motore, e la pagina deve raccontare quelli che il motore
+            // applica davvero, non una copia che invecchia per conto suo.
+            preset = Preset.Tutti.Select(x => new
             {
-                colori = p.NumeroColori,
-                unione = p.SogliaUnione,
-                rumore = p.RiduzioneRumore,
-                lisciatura = p.RaggioLisciatura,
-                granelli = p.Granelli,
-                morbidezza = p.Morbidezza,
-                giri = p.GiriLisciatura,
-                tolleranza = p.Tolleranza,
-                angolo = p.AngoloSpigolo,
-            },
+                codice = x.Codice,
+                nome = x.Nome,
+                famiglia = x.Famiglia,
+                descrizione = x.Descrizione,
+                quando = x.QuandoUsarlo,
+                modalita = x.ModalitaTracciato,
+                automatico = x.MisuraLImmagine,
+                // I numeri veri, cosi' scegliendo un preset i cursori si muovono sotto gli occhi
+                // invece di restare fermi mentre il disegno cambia. Null sull'automatico, dove i
+                // numeri si misurano sull'immagine e prima di vederla non esistono.
+                valori = x.Parametri == null ? null : Valori(x.Parametri),
+            }),
+            presetPredefinito = Preset.CodicePredefinito,
+            valori = Valori(p),
             campi = new object[]
             {
                 Campo("colori", "Numero di tinte", 2, 64, 1,
@@ -105,6 +112,20 @@ public class ConfigurationController : ControllerBase
                       "Quante passate di lisciatura. Oltre un certo punto non cambia più niente."),
             },
         });
+
+        static object Valori(ParametriTracciato v) => new
+        {
+            grigi = v.ScalaDiGrigi,
+            colori = v.NumeroColori,
+            unione = v.SogliaUnione,
+            rumore = v.RiduzioneRumore,
+            lisciatura = v.RaggioLisciatura,
+            granelli = v.Granelli,
+            morbidezza = v.Morbidezza,
+            giri = v.GiriLisciatura,
+            tolleranza = v.Tolleranza,
+            angolo = v.AngoloSpigolo,
+        };
 
         static object Campo(string nome, string etichetta, double min, double max, double passo, string spiega)
             => new { nome, etichetta, min, max, passo, spiega };

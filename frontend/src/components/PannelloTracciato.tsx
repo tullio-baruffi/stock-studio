@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type CampoTracciato, type ConfigTracciato, type ParametriTracciato } from "../api";
+import { api, type CampoTracciato, type ConfigTracciato, type NomeCampoTracciato, type ParametriTracciato, type PresetTracciato } from "../api";
 
 /**
  * I numeri con cui si traccia a colori, da regolare guardando il disegno.
@@ -25,12 +25,21 @@ export default function PannelloTracciato({
   onChange,
   disabilitato,
   compatto,
+  onModalita,
 }: {
   valore: ParametriTracciato;
   onChange: (v: ParametriTracciato) => void;
   disabilitato?: boolean;
   /** Mostra solo i quattro numeri che contano, con «Tutti i parametri» per aprire il resto. */
   compatto?: boolean;
+  /**
+   * Chiamata quando il preset scelto porta con sé una modalità diversa.
+   *
+   * Serve perché metà dei preset sono silhouette in bianco e nero: sceglierne uno e lasciare la
+   * pagina su «A colori» vorrebbe dire che i due comandi si contraddicono sotto gli occhi di chi
+   * guarda. Chi non ha una scelta di modalità da tenere allineata può non passarla.
+   */
+  onModalita?: (modalita: string) => void;
 }) {
   const [config, setConfig] = useState<ConfigTracciato | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
@@ -47,30 +56,106 @@ export default function PannelloTracciato({
   if (errore) return <p className="muted small">Parametri del tracciato non disponibili: {errore}</p>;
   if (!config) return <p className="muted small">Leggo i parametri del tracciato…</p>;
 
-  const principali: (keyof ParametriTracciato)[] = ["colori", "rumore", "granelli", "tolleranza"];
+  const principali: NomeCampoTracciato[] = ["colori", "rumore", "granelli", "tolleranza"];
   const campi = compatto && !tutti
     ? config.campi.filter((c) => principali.includes(c.nome))
     : config.campi;
 
-  const attuale = (c: CampoTracciato) => valore[c.nome] ?? config.valori[c.nome];
-  const spostati = config.campi.filter((c) => valore[c.nome] != null
-    && valore[c.nome] !== config.valori[c.nome]).length;
+  const preset = config.preset ?? [];
+  const scelto = preset.find((p) => p.codice === valore.preset) ?? null;
 
-  const imposta = (nome: keyof ParametriTracciato, v: number) => {
-    // Tornare sul predefinito vuol dire **togliere** la scelta, non fissarla: così l'immagine
-    // continua a seguire la configurazione se un domani cambia.
+  // La base da cui si misura lo scostamento: i numeri del preset se ce n'è uno con numeri, i
+  // predefiniti altrimenti. Senza questo, scegliere «3 colori» mostrerebbe «1 parametro spostato»
+  // per un valore che chi guarda non ha spostato — e il tasto «ripristina» lo riporterebbe a 24.
+  const base = (nome: NomeCampoTracciato): number =>
+    (scelto?.valori?.[nome] as number | undefined) ?? config.valori[nome];
+
+  const attuale = (c: CampoTracciato) => valore[c.nome] ?? base(c.nome);
+  const spostati = config.campi.filter((c) => valore[c.nome] != null
+    && valore[c.nome] !== base(c.nome)).length;
+
+  const imposta = (nome: NomeCampoTracciato, v: number) => {
+    // Tornare sul valore di partenza vuol dire **togliere** la scelta, non fissarla: così
+    // l'immagine continua a seguire il preset (o la configurazione) se un domani cambiano.
     const prossimo = { ...valore };
-    if (v === config.valori[nome]) delete prossimo[nome];
+    if (v === base(nome)) delete prossimo[nome];
     else prossimo[nome] = v;
     onChange(prossimo);
   };
 
+  const scegliPreset = (codice: string) => {
+    // Cambiare preset **azzera i cursori**, e non è una perdita: quei numeri erano scostamenti
+    // da un'altra taratura, e riportarli su questa vorrebbe dire applicare a «3 colori» una
+    // correzione pensata per «Foto ad alta fedeltà». Il grigio invece viaggia col preset, perché
+    // è il preset stesso a deciderlo.
+    const p = preset.find((x) => x.codice === codice);
+    onChange(codice ? { preset: codice, ...(p?.valori?.grigi ? { grigi: true } : {}) } : {});
+    if (p && onModalita) onModalita(p.modalita);
+  };
+
+  // Raggruppati per famiglia, nell'ordine in cui il servizio li manda: chi apre l'elenco senza
+  // sapere cosa scegliere deve trovare per primo quello che funziona senza sapere niente.
+  const famiglie: { nome: string; voci: PresetTracciato[] }[] = [];
+  for (const p of preset) {
+    const ultima = famiglie[famiglie.length - 1];
+    if (ultima && ultima.nome === p.famiglia) ultima.voci.push(p);
+    else famiglie.push({ nome: p.famiglia, voci: [p] });
+  }
+
   return (
     <div className="tracciato-pannello">
+      {preset.length > 0 && (
+        <div className="tracciato-preset">
+          <label htmlFor="tr-preset">
+            <span className="tracciato-nome">Preset</span>
+          </label>
+          <select
+            id="tr-preset"
+            value={valore.preset ?? ""}
+            disabled={disabilitato}
+            onChange={(e) => scegliPreset(e.target.value)}
+          >
+            <option value="">Taratura di serie</option>
+            {famiglie.map((f) => (
+              <optgroup label={f.nome} key={f.nome}>
+                {f.voci.map((p) => (
+                  <option value={p.codice} key={p.codice}>{p.nome}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <p className="muted small">
+            {scelto ? (
+              <>
+                <strong>{scelto.descrizione}</strong> {scelto.quando}
+              </>
+            ) : (
+              <>
+                Tarature già pronte per un genere di disegno, così non devi accordare nove
+                manopole. I nomi sono quelli di Illustrator, <strong>i numeri no</strong>: Adobe
+                non li pubblica, e questi sono la nostra lettura misurata sul nostro motore.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      {scelto?.automatico ? (
+        <p className="muted small">
+          Questo preset non ha numeri da mostrare: li misura sull'immagine, una per una, al momento
+          del tracciato. Per vederli e correggerli, scegline un altro.
+        </p>
+      ) : scelto?.modalita === "vector" ? (
+        <p className="muted small">
+          Questo preset traccia una <strong>silhouette in bianco e nero</strong>: il disegno lo
+          decide la soglia di luminanza, non i cursori delle tinte. Su un'immagine a colori la
+          appiattisce a nero pieno.
+        </p>
+      ) : (
       <div className="tracciato-campi">
         {campi.map((c) => {
           const v = attuale(c);
-          const mosso = valore[c.nome] != null && valore[c.nome] !== config.valori[c.nome];
+          const mosso = valore[c.nome] != null && valore[c.nome] !== base(c.nome);
           return (
             <div className="tracciato-campo" key={c.nome}>
               <label htmlFor={`tr-${c.nome}`}>
@@ -81,9 +166,9 @@ export default function PannelloTracciato({
                     <button
                       type="button"
                       className="tracciato-ripristina"
-                      onClick={() => imposta(c.nome, config.valori[c.nome])}
+                      onClick={() => imposta(c.nome, base(c.nome))}
                       disabled={disabilitato}
-                      title={`Torna al predefinito (${arrotonda(config.valori[c.nome], c.passo)})`}
+                      title={`Torna a ${arrotonda(base(c.nome), c.passo)}`}
                     >↺</button>
                   )}
                 </span>
@@ -104,9 +189,10 @@ export default function PannelloTracciato({
           );
         })}
       </div>
+      )}
 
       <div className="tracciato-pie">
-        {compatto && (
+        {compatto && !scelto?.automatico && scelto?.modalita !== "vector" && (
           <button type="button" className="btn small ghost" onClick={() => setTutti((t) => !t)}>
             {tutti ? "Solo i principali" : `Tutti i parametri (${config.campi.length})`}
           </button>
@@ -115,14 +201,15 @@ export default function PannelloTracciato({
           type="button"
           className="btn small ghost"
           onClick={() => onChange({})}
-          disabled={disabilitato || spostati === 0}
+          disabled={disabilitato || (spostati === 0 && !scelto)}
         >
           Riporta tutto ai predefiniti
         </button>
         <span className="muted small">
           {spostati === 0
-            ? "Taratura di serie."
-            : `${spostati} ${spostati === 1 ? "parametro spostato" : "parametri spostati"}.`}
+            ? scelto ? `Preset «${scelto.nome}», non ritoccato.` : "Taratura di serie."
+            : `${spostati} ${spostati === 1 ? "parametro spostato" : "parametri spostati"}`
+              + (scelto ? ` rispetto al preset «${scelto.nome}».` : ".")}
           {" "}Le misure in pixel valgono su un lato lungo di {config.riferimento} px e si
           adattano da sole alla grandezza vera dell'immagine. Ogni numero è spiegato con esempi
           nella scheda <strong>Tracciato</strong>.

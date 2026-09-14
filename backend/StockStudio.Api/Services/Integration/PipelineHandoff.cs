@@ -47,7 +47,13 @@ public class PipelineHandoff
     /// <summary>True when the storage account behind the pipeline is reachable from here.</summary>
     public bool Enabled => !string.IsNullOrWhiteSpace(_s.StorageConnectionString);
 
-    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string mode, int? threshold,
+    /// <param name="mode">
+    /// Cosa fare del file. Null vale **automatico**: si guarda l'immagine e si decide. E' nullabile
+    /// apposta, perche' qui passa anche chi non ha una preferenza -- un preset che non parla di
+    /// modalita', una chiamata che non porta quel campo -- e riempire il vuoto con una modalita'
+    /// qualunque vorrebbe dire imporre una lavorazione che nessuno ha scelto.
+    /// </param>
+    public async Task<HandoffResult> HandOffAsync(string fileName, Stream content, string? mode, int? threshold,
                                                   int? colori, double? unione,
                                                   ParametriTracciato? tracciato, CancellationToken ct)
     {

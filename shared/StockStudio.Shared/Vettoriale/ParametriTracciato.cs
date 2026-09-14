@@ -164,6 +164,45 @@ namespace StockStudio.Shared.Vettoriale
         /// </summary>
         public double AngoloSpigolo { get; set; } = 65;
 
+        /// <summary>
+        /// Se togliere il colore prima di ridurre a tinte, tracciando i soli valori.
+        ///
+        /// ## Perche' non basta chiedere poche tinte
+        /// Verrebbe da pensare che un'immagine ridotta a poche tinte diventi quasi grigia. Non
+        /// succede: la riduzione sceglie le tinte **piu' presenti**, e se l'illustrazione e' blu e
+        /// arancione restano blu e arancione, solo meno. Per avere i grigi bisogna toglierlo, il
+        /// colore, e farlo **prima** che le tinte vengano scelte -- dopo, le tinte sono gia' quelle
+        /// sbagliate e desaturarle darebbe grigi scelti male.
+        ///
+        /// ## Perche' la luminanza e non la media dei tre canali
+        /// Perche' l'occhio non pesa uguale i tre canali: un verde pieno e un blu pieno hanno la
+        /// stessa media e luminosita' molto diverse. Con la media, un disegno verde su blu
+        /// diventerebbe un rettangolo grigio uniforme -- il disegno sparirebbe. Con i pesi della
+        /// luminanza resta la differenza che si vedeva.
+        /// </summary>
+        public bool ScalaDiGrigi { get; set; }
+
+        /// <summary>
+        /// La stessa immagine senza colore, pronta per la riduzione a tinte.
+        ///
+        /// Torna l'array **originale** quando la scala di grigi non e' chiesta: chi chiama lo fa su
+        /// ogni tracciato, e copiare qualche decina di megabyte per non fare niente si paga su
+        /// tutte le immagini per servirne una.
+        /// </summary>
+        public static byte[] SenzaColore(byte[] rgb)
+        {
+            if (rgb == null) return rgb!;
+            var g = new byte[rgb.Length];
+            for (int i = 0; i + 2 < rgb.Length; i += 3)
+            {
+                // I pesi di Rec. 601, gli stessi che usa la soglia del bianco e nero: due misure
+                // di luminosita' diverse dentro lo stesso programma sarebbero un difetto in attesa.
+                var v = (byte)((rgb[i] * 299 + rgb[i + 1] * 587 + rgb[i + 2] * 114) / 1000);
+                g[i] = v; g[i + 1] = v; g[i + 2] = v;
+            }
+            return g;
+        }
+
         /// <summary>La taratura di serie: quella misurata nel confronto con Illustrator.</summary>
         public static ParametriTracciato Predefiniti
         {
@@ -227,6 +266,7 @@ namespace StockStudio.Shared.Vettoriale
         {
             return new ParametriTracciato
             {
+                ScalaDiGrigi = ScalaDiGrigi,
                 NumeroColori = Limita(NumeroColori, 2, 64),
                 SogliaUnione = SogliaUnione < 0 ? 0 : SogliaUnione > 20000 ? 20000 : SogliaUnione,
                 RiduzioneRumore = Limita(RiduzioneRumore, 0, 8),

@@ -194,8 +194,10 @@ export default function TracciatoView() {
 
   const predefinito = (chiave: string) => {
     if (!config) return null;
-    const v = (config.valori as Record<string, number>)[chiave];
-    return v === undefined ? null : v.toLocaleString("it-IT");
+    // Fra i valori c'è anche la scala di grigi, che è un interruttore e non un numero: qui si
+    // mostrano solo i cursori, quindi quel che non è un numero non ha un predefinito da riferire.
+    const v = (config.valori as Record<string, number | boolean>)[chiave];
+    return typeof v === "number" ? v.toLocaleString("it-IT") : null;
   };
 
   return (
@@ -215,6 +217,60 @@ export default function TracciatoView() {
           con quei valori. Non sono disegni esplicativi: sono il risultato.
         </p>
       </div>
+
+      <section className="guide-sec">
+        <h2>Prima dei nove numeri, il preset</h2>
+        <p>
+          Accordare nove manopole è il modo lungo. Sopra ai cursori c'è un elenco di tarature già
+          pronte: si sceglie il <strong>genere di disegno</strong> — una fotografia, un logo, un
+          line art — e i nove numeri si mettono da soli. Da lì si può ancora correggere quel che
+          serve: i cursori continuano a valere e si sovrappongono al preset.
+        </p>
+        <p>
+          Il primo dell'elenco, <strong>Automatico</strong>, è l'unico che non ha numeri scritti:
+          li misura sull'immagine, una per una. È quello da lasciare quando non si sa cosa scegliere.
+        </p>
+        <figure className="guide-figura">
+          <img src="/tracciato/preset.png" alt="La stessa illustrazione tracciata con otto preset diversi" />
+          <figcaption>
+            Lo stesso ritaglio tracciato davvero con otto preset. Da 170 a 854 contorni, da 125 a
+            762 KB: la differenza non è di rifinitura, è di che file si consegna.
+          </figcaption>
+        </figure>
+        <table className="guide-table">
+          <thead>
+            <tr><th>Preset</th><th>Quando</th></tr>
+          </thead>
+          <tbody>
+            {(config?.preset ?? []).filter((p) => p.modalita !== "vector").map((p) => (
+              <tr key={p.codice}>
+                <td><strong>{p.nome}</strong></td>
+                <td>{p.quando}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <h3>Sui nomi: sono quelli di Illustrator, i numeri no</h3>
+        <p>
+          I preset ricalcano quelli di Adobe Illustrator, perché è l'elenco che chi lavora di
+          vettoriali già conosce. <strong>I valori però sono nostri</strong>, e vale la pena dire
+          perché: Adobe non pubblica i numeri dei propri preset da nessuna parte — non stanno in un
+          file leggibile, e la documentazione di scripting li dichiara bloccati.
+        </p>
+        <p>
+          Quel che invece è documentato, e che rende il ricalco una traduzione e non
+          un'invenzione, è che <strong>tre dei quattro comandi principali hanno la stessa unità di
+          misura dei nostri</strong>: la fedeltà è una distanza dal bordo in entrambi, l'angolo di
+          spigolo è in gradi in entrambi, i granelli sono pixel quadrati in entrambi. Non c'è una
+          conversione da indovinare — c'è da scegliere dove mettere ogni preset lungo scale che già
+          combaciano, e quello si è fatto misurando.
+        </p>
+        <p className="muted">
+          Una differenza resta, ed è a nostro favore: i numeri di Illustrator valgono sui pixel
+          dell'immagine com'è, i nostri si adattano alla grandezza (vedi sotto). Lo stesso preset
+          su una consegna a tremila e a seimila pixel dà lo stesso disegno.
+        </p>
+      </section>
 
       <section className="guide-sec">
         <h2>Se il disegno è venuto male</h2>

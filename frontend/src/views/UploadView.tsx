@@ -135,7 +135,10 @@ export default function UploadView({
         staged.map((s) => s.file),
         mode,
         mode === "vector" ? staged.map((s) => s.threshold) : undefined,
-        mode === "colore" ? tracciato : undefined
+        // I parametri viaggiano in tutte le modalità che tracciano, non solo a colori: un preset
+        // porta con sé anche **come** tracciare, e mandarlo solo quando l'elenco è già su
+        // «A colori» vorrebbe dire che scegliere «Silhouette» non arriva da nessuna parte.
+        mode === "raster" ? undefined : tracciato
       );
 
       const failedBy = new Map((res.errors ?? []).map((e) => [e.file, e.error]));
@@ -335,13 +338,13 @@ export default function UploadView({
             </div>
           )}
 
-          {mode === "colore" && (
+          {mode !== "raster" && (
             <div className="bulkbar tracciato-barra">
               <span className="muted small">
-                <strong>Come tracciare a colori.</strong> Sono i numeri con cui il disegno viene
-                ridotto a campiture e i contorni ridisegnati: valgono per tutto il lotto, perché chi
-                carica venti disegni insieme li ha scelti insieme. Per correggerne uno solo c'è la
-                finestra «Ritraccia» nel dettaglio dell'immagine. Qui non c'è anteprima perché
+                <strong>Come tracciare.</strong> Il preset dice in una parola che genere di disegno
+                stai caricando; i cursori sotto lo correggono. Valgono per tutto il lotto, perché
+                chi carica venti disegni insieme li ha scelti insieme: per correggerne uno solo c'è
+                la finestra «Ritraccia» nel dettaglio dell'immagine. Qui non c'è anteprima perché
                 sarebbe una ricostruzione approssimata — e decidere su un'anteprima falsa è peggio
                 che non averla.
               </span>
@@ -349,6 +352,7 @@ export default function UploadView({
                 valore={tracciato}
                 onChange={setTracciato}
                 disabilitato={delivering}
+                onModalita={(m) => setMode(m as Modalita)}
                 compatto
               />
             </div>

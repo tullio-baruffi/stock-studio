@@ -134,6 +134,13 @@ public partial class OpenSourceVectorizer : IVectorizer
         var lisciatura = Disegno.LisciaturaPer(rgb, src.Width, src.Height, opachi, p);
         rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
 
+        // Il colore si toglie **dopo** la pulizia ma **prima** della riduzione a tinte: dopo, le
+        // tinte sarebbero gia' state scelte sui colori e desaturarle darebbe grigi decisi male.
+        // Di che pasta sia il disegno si e' gia' guardato sopra, sui pixel a colori, che e' il
+        // posto giusto: la scala di grigi e' una resa che si chiede, non una proprieta' del
+        // disegno che si sta misurando.
+        if (p.ScalaDiGrigi) rgb = ParametriTracciato.SenzaColore(rgb);
+
         var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
         // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte un
         // pixel, e ricalcarle darebbe contorni ondulati.

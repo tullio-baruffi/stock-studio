@@ -54,25 +54,50 @@ public class ParametriTracciatoModulo
     public int? Giri { get; set; }
     public double? Tolleranza { get; set; }
     public double? Angolo { get; set; }
+    public bool? Grigi { get; set; }
+
+    /// <summary>
+    /// Il codice del preset scelto, se ne e' stato scelto uno. Vedi <see cref="Preset"/>.
+    ///
+    /// Non e' un decimo parametro: e' **da dove si parte**. I nove numeri qui sopra restano
+    /// facoltativi e continuano a valere, ma ora si sovrappongono ai numeri del preset invece che
+    /// a quelli configurati. Chi sceglie "3 colori" e poi alza i granelli ottiene i 3 colori con i
+    /// suoi granelli, che e' la cosa che ci si aspetta -- e l'unico modo per cui un preset non
+    /// diventi una gabbia.
+    /// </summary>
+    public string? Preset { get; set; }
 
     /// <summary>Vero quando chi ha compilato il modulo ha scelto almeno una cosa.</summary>
     public bool Qualcosa =>
         Colori.HasValue || Unione.HasValue || Rumore.HasValue || Lisciatura.HasValue
         || Granelli.HasValue || Morbidezza.HasValue || Giri.HasValue
-        || Tolleranza.HasValue || Angolo.HasValue;
+        || Tolleranza.HasValue || Angolo.HasValue || Grigi.HasValue
+        || !string.IsNullOrWhiteSpace(Preset);
+
+    /// <summary>
+    /// Il preset scelto, o null se non ne e' stato scelto uno riconoscibile.
+    /// </summary>
+    public StockStudio.Shared.Vettoriale.Preset? PresetScelto
+        => StockStudio.Shared.Vettoriale.Preset.Trova(Preset);
 
     /// <summary>
     /// La taratura di partenza con sopra le scelte di chi ha caricato, e il tutto riportato dentro
     /// i limiti in cui ha senso. Null quando non e' stato scelto niente: cosi' chi chiama sa che
     /// puo' lasciare il predefinito invece di riscriverlo.
+    ///
+    /// L'ordine con cui le tre fonti si sovrappongono e' quello della fiducia: la taratura
+    /// configurata sta sotto, il preset ci va sopra, e i cursori che qualcuno ha mosso stanno in
+    /// cima. Un preset **automatico** non porta numeri e lascia scoperto quel che sta sotto, cosi'
+    /// la misura sull'immagine puo' fare il suo mestiere.
     /// </summary>
     public ParametriTracciato? Su(ParametriTracciato partenza)
     {
         if (!Qualcosa) return null;
 
-        var p = partenza ?? ParametriTracciato.Predefiniti;
+        var p = PresetScelto?.ParametriCopia() ?? partenza ?? ParametriTracciato.Predefiniti;
         return new ParametriTracciato
         {
+            ScalaDiGrigi = Grigi ?? p.ScalaDiGrigi,
             NumeroColori = Colori ?? p.NumeroColori,
             SogliaUnione = Unione ?? p.SogliaUnione,
             RiduzioneRumore = Rumore ?? p.RiduzioneRumore,
