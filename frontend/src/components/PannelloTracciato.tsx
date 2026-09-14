@@ -26,6 +26,7 @@ export default function PannelloTracciato({
   disabilitato,
   compatto,
   onModalita,
+  onTaraturaDiSerie,
 }: {
   valore: ParametriTracciato;
   onChange: (v: ParametriTracciato) => void;
@@ -40,6 +41,18 @@ export default function PannelloTracciato({
    * guarda. Chi non ha una scelta di modalità da tenere allineata può non passarla.
    */
   onModalita?: (modalita: string) => void;
+  /**
+   * Chiamata quando si torna sulla «Taratura di serie», cioè sul preset vuoto.
+   *
+   * Serve a chi ha da proporre qualcosa di meglio della configurazione — nel ritracciamento è la
+   * misura fatta sul disegno — e vuole rimetterla in campo **solo quando gliene viene chiesto**.
+   * Senza questo appiglio l'unico momento per riproporla sarebbe l'apertura della finestra, cioè
+   * proprio quello in cui cancellerebbe la taratura scelta l'ultima volta.
+   *
+   * Arriva dopo l'azzeramento: chi la riceve ha l'ultima parola sui cursori. Chi non ha niente da
+   * proporre può non passarla, e «Taratura di serie» resta quello che dice di essere.
+   */
+  onTaraturaDiSerie?: () => void;
 }) {
   const [config, setConfig] = useState<ConfigTracciato | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
@@ -91,6 +104,9 @@ export default function PannelloTracciato({
     const p = preset.find((x) => x.codice === codice);
     onChange(codice ? { preset: codice, ...(p?.valori?.grigi ? { grigi: true } : {}) } : {});
     if (p && onModalita) onModalita(p.modalita);
+    // Tornare alla taratura di serie è l'unico gesto che chiede di ricalcolare: chi ha una
+    // proposta migliore la rimette qui, sopra l'azzeramento appena fatto.
+    if (!codice) onTaraturaDiSerie?.();
   };
 
   // Raggruppati per famiglia, nell'ordine in cui il servizio li manda: chi apre l'elenco senza

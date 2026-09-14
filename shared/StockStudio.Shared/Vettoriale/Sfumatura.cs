@@ -58,6 +58,17 @@ namespace StockStudio.Shared.Vettoriale
         private const int PixelMinimi = 400;
 
         /// <summary>
+        /// Quanto dell'errore la rampa deve togliere per meritarsi il posto.
+        ///
+        /// Nove decimi: la rampa deve fare almeno un decimo meglio della tinta piatta. Non e' una
+        /// richiesta severa, ed e' voluto -- una sfumatura vera spiega molto piu' di cosi', mentre
+        /// una zona che non e' sfumata non ci arriva nemmeno per caso. Chiedere di piu'
+        /// toglierebbe anche le sfumature deboli ma autentiche, che sono proprio quelle per cui
+        /// questa passata esiste.
+        /// </summary>
+        private const double QuotaDaSpiegare = 0.9;
+
+        /// <summary>
         /// Stima la rampa della tinta indicata, o restituisce null se la zona e' piatta, troppo
         /// piccola, o varia in un modo che una retta non descrive.
         /// </summary>
@@ -173,6 +184,56 @@ namespace StockStudio.Shared.Vettoriale
 
             var salto = (Math.Abs(c1.R - c2.R) + Math.Abs(c1.G - c2.G) + Math.Abs(c1.B - c2.B)) / 3.0;
             if (salto < SaltoMinimo) return null;   // piatta: meglio una tinta sola
+
+            // L'ultima prova, e la piu' importante: **la rampa descrive questa zona meglio di una
+            // tinta sola?**
+            //
+            // ## Perche' mancava e cosa costava
+            // Fin qui si e' stimata una rampa, non verificata. Una zona puo' benissimo avere i due
+            // estremi diversi di dieci livelli senza essere affatto sfumata: basta che sia grande
+            // e che il disegno ci passi sopra qualcosa. La rampa allora viene stesa su **tutta** la
+            // zona, comprese le parti che erano giuste, e quel che si vede e' una velatura chiara
+            // dove il colore era pieno. E' il difetto delle "macchie di colore": sul tronco del
+            // castoro il bruno scuro usciva slavato e gessoso, mentre Illustrator -- che sfumature
+            // non ne mette affatto -- lo teneva pieno.
+            //
+            // ## Come si verifica
+            // Si misura l'errore che si commette nei due modi: colorando tutta la zona con la sua
+            // tinta media, oppure con la rampa. Se la rampa non spiega una fetta consistente di
+            // quel che varia, non e' una sfumatura -- e' una zona con dentro dell'altro, e
+            // stenderci sopra un gradiente e' una perdita secca.
+            //
+            // Si guarda **solo il colore**, non la luminanza: la regressione sopra lavora sulla
+            // luminanza perche' li' serviva una direzione, ma qui si giudica quel che si vede.
+            double errPiatto = 0, errRampa = 0;
+            long quanti = 0;
+            var mediaR = (c1.R + (double)c2.R) / 2;
+            var mediaG = (c1.G + (double)c2.G) / 2;
+            var mediaB = (c1.B + (double)c2.B) / 2;
+            var ampiezza = pMax - pMin;
+
+            for (var y = 0; y < altezza; y += passo)
+            {
+                var riga = y * larghezza;
+                for (var x = 0; x < larghezza; x += passo)
+                {
+                    if (indici[riga + x] != tinta) continue;
+                    if (!Interno(riga + x, x, y)) continue;
+
+                    var u = (x * dx + y * dy - pMin) / ampiezza;
+                    if (u < 0) u = 0; else if (u > 1) u = 1;
+                    var p = (riga + x) * 3;
+
+                    errPiatto += Math.Abs(rgb[p] - mediaR) + Math.Abs(rgb[p + 1] - mediaG)
+                               + Math.Abs(rgb[p + 2] - mediaB);
+                    errRampa += Math.Abs(rgb[p] - (c1.R + (c2.R - c1.R) * u))
+                              + Math.Abs(rgb[p + 1] - (c1.G + (c2.G - c1.G) * u))
+                              + Math.Abs(rgb[p + 2] - (c1.B + (c2.B - c1.B) * u));
+                    quanti++;
+                }
+            }
+            if (quanti == 0 || errPiatto <= 0) return null;
+            if (errRampa > errPiatto * QuotaDaSpiegare) return null;
 
             return new Rampa
             {

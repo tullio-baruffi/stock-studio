@@ -130,6 +130,12 @@ export default function RevisioneView() {
    * La scelta resta fra un'immagine e l'altra di proposito: quando una taratura si rivela giusta
    * per un disegno, di solito lo è anche per i suoi fratelli dello stesso lotto, e rimetterla a
    * mano ogni volta sarebbe il modo più sicuro per non usarla.
+   *
+   * Per la stessa ragione **riaprire la finestra non tocca i cursori**. Prima la misura fatta sul
+   * disegno si applicava da sé all'apertura: chi aveva accordato la taratura su un'immagine se la
+   * ritrovava cancellata alla successiva, e ogni ritocco durava quanto una finestra. Adesso la
+   * misura si vede, si legge, e si applica solo quando la si chiede — con il pulsante, oppure
+   * riportando il preset su «Taratura di serie».
    */
   const [finestraTracciato, setFinestraTracciato] = useState(false);
   const [tracciatoScelto, setTracciatoScelto] = useState<ParametriTracciato>({});
@@ -141,8 +147,6 @@ export default function RevisioneView() {
    * vorrebbe dire pagarla anche per le novantanove che non si ritracciano.
    */
   const [consigliato, setConsigliato] = useState<TracciatoConsigliato | "attesa" | null>(null);
-  /** Se i valori nel pannello sono quelli proposti: evita di riproporli quando gia' ci sono. */
-  const [consigliatiApplicati, setConsigliatiApplicati] = useState(false);
   const [nota, setNota] = useState("");
 
   const [fascia, setFascia] = useState<Fascia>("tutte");
@@ -625,31 +629,44 @@ export default function RevisioneView() {
    * distingue, e da li' ricava i numeri. Si chiede qui e non prima perche' costa una discesa
    * dell'originale da blob: farla a ogni immagine sfogliata vorrebbe dire pagarla anche per le
    * novantanove che non si ritracciano.
+   *
+   * Quello che la misura **non** fa è muovere i cursori. Prima li riscriveva all'apertura, e la
+   * taratura accordata a mano sull'immagine precedente spariva senza che nessuno l'avesse
+   * toccata. Qui si apre e basta: la proposta sta scritta sopra i cursori, e si applica quando la
+   * si chiede.
    */
   const apriFinestraTracciato = useCallback(async () => {
     if (!corrente) return;
     setFinestraTracciato(true);
     setConsigliato("attesa");
-    setConsigliatiApplicati(false);
     try {
-      const c = await api.tracciatoConsigliato(stadio, corrente.id);
-      setConsigliato(c);
-      // I valori proposti si mettono subito nel pannello: chi apre la finestra vuole il risultato
-      // migliore, non un modulo da compilare. Restano tutti spostabili.
-      if (c.ok && c.valori) {
-        setTracciatoScelto({ ...c.valori });
-        setConsigliatiApplicati(true);
-      }
+      setConsigliato(await api.tracciatoConsigliato(stadio, corrente.id));
     } catch (e) {
       setConsigliato({ ok: false, error: (e as Error).message });
     }
   }, [corrente, stadio]);
 
+  /**
+   * Mette i valori proposti nei cursori.
+   *
+   * Due strade ci arrivano: il pulsante «Usa i valori consigliati» e la scelta del preset vuoto,
+   * cioè «Taratura di serie» — che è il modo naturale di dire «lascia perdere quello che avevo
+   * messo e riparti da quello che questa immagine chiede».
+   */
   const applicaConsigliati = useCallback(() => {
     if (!consigliato || consigliato === "attesa" || !consigliato.valori) return;
     setTracciatoScelto({ ...consigliato.valori });
-    setConsigliatiApplicati(true);
   }, [consigliato]);
+
+  /**
+   * Se i cursori mostrano già esattamente la proposta.
+   *
+   * Dedotto dal confronto invece che ricordato in uno stato: uno stato direbbe «applicati» anche
+   * dopo che si è mosso un cursore da un'altra parte, e il pulsante che li applica sparirebbe
+   * proprio quando serve di nuovo.
+   */
+  const consigliatiApplicati = consigliato !== null && consigliato !== "attesa"
+    && !!consigliato.valori && stessaTaratura(tracciatoScelto, consigliato.valori);
 
   /**
    * Ritraccia SVG ed EPS di un'immagine già in libreria.
@@ -1528,10 +1545,19 @@ export default function RevisioneView() {
                   e {consigliato.effettivi?.tolleranza} px di fedeltà.
                 </p>
 
-                {!consigliatiApplicati && (
-                  <button className="btn small" onClick={applicaConsigliati}>
-                    Usa i valori consigliati
-                  </button>
+                {consigliatiApplicati ? (
+                  <p className="muted small">
+                    I cursori qui sotto <strong>sono</strong> i valori proposti.
+                  </p>
+                ) : (
+                  <p className="muted small">
+                    <button className="btn small" onClick={applicaConsigliati}>
+                      Usa i valori consigliati
+                    </button>
+                    {" "}I cursori restano come li avevi lasciati l'ultima volta: questa è una
+                    proposta, non una sostituzione. Si applica con il pulsante, o riportando il
+                    preset su «Taratura di serie».
+                  </p>
                 )}
               </div>
             )}
@@ -1539,13 +1565,14 @@ export default function RevisioneView() {
             {consigliato && consigliato !== "attesa" && !consigliato.ok && (
               <p className="muted small">
                 Non sono riuscito a misurare il disegno ({consigliato.error}): restano i valori
-                predefiniti.
+                scelti l'ultima volta.
               </p>
             )}
 
             <PannelloTracciato
               valore={tracciatoScelto}
-              onChange={(v) => { setTracciatoScelto(v); setConsigliatiApplicati(false); }}
+              onChange={setTracciatoScelto}
+              onTaraturaDiSerie={applicaConsigliati}
               disabilitato={occupato}
             />
             </div>
@@ -1574,6 +1601,21 @@ export default function RevisioneView() {
 
 /** Estensioni che un browser sa disegnare da sé. L'EPS non è fra queste, e non lo sarà mai. */
 const VISIBILI = new Set(["JPG", "JPEG", "PNG", "WEBP", "SVG", "GIF"]);
+
+/**
+ * Se due tarature dicono la stessa cosa, campo per campo.
+ *
+ * Confrontare gli oggetti non basta e nemmeno guardare le chiavi di uno solo: un campo assente
+ * significa «lascia decidere al servizio», che è un valore quanto gli altri, e va confrontato
+ * anche quando c'è da una parte sola.
+ */
+function stessaTaratura(a: ParametriTracciato, b: ParametriTracciato): boolean {
+  const chiavi = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of chiavi) {
+    if (a[k as keyof ParametriTracciato] !== b[k as keyof ParametriTracciato]) return false;
+  }
+  return true;
+}
 
 /**
  * Se l'immagine ha vettoriali accanto a sé, cioè se c'è qualcosa da ritracciare.

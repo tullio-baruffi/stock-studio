@@ -121,8 +121,24 @@ namespace StockStudio.Shared.Vettoriale
         ///     0    -> 537 contorni, 11580 nodi
         ///     120  -> 412 contorni,  9670 nodi  (Illustrator: 334 contorni)
         ///     200  -> 313 contorni,  7564 nodi, ma le pieghe della pinna si spezzano
+        ///
+        /// ## Perche' e' sceso da 150 a 60
+        /// Perche' il primo valore era stato scelto per **far quadrare il numero di contorni** con
+        /// quello di Illustrator, e quello era il bersaglio sbagliato: Illustrator arriva a 334
+        /// contorni **tenendo** dettagli che noi buttavamo per arrivare allo stesso numero.
+        ///
+        /// Misurato sulla balena, guardando invece il disegno:
+        ///     150 -> l'occhio e' una palla nera piena, le macchioline del dorso spariscono
+        ///      60 -> l'occhio ha il suo riflesso bianco e le macchioline ci sono
+        /// Entrambi sono nell'originale, ed entrambi sono nel tracciato di Illustrator. Costa 467
+        /// contorni invece di 603 e trenta kilobyte, che e' poco per due dettagli che si guardano.
+        ///
+        /// Per riferimento, il comando equivalente di Illustrator (minArea) vale 25 px quadrati
+        /// nei suoi preset, misurati sui pixel veri dell'immagine. Sessanta riferiti a tremila
+        /// pixel diventano cinquanta su un'immagine da 2752 e sedici su una da 1536: siamo
+        /// nell'ordine di grandezza giusto, non piu' sei volte sopra.
         /// </summary>
-        public int Granelli { get; set; } = 150;
+        public int Granelli { get; set; } = 60;
 
         /// <summary>
         /// Di quanti pixel il contorno puo' allontanarsi dalla scalinata misurata mentre lo si
