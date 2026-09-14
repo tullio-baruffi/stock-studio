@@ -364,6 +364,14 @@ namespace MJ.Classifier
             var lisciatura = Disegno.LisciaturaPer(rgb, src.Width, src.Height, opachi, p);
             rgb = Rumore.Mediana(rgb, src.Width, src.Height, p.RiduzioneRumore);
 
+            // Il colore si toglie **dopo** la pulizia ma **prima** della riduzione a tinte: dopo,
+            // le tinte sarebbero gia' state scelte sui colori e desaturarle darebbe grigi decisi
+            // male. Sta qui **e** in OpenSourceVectorizer perche' le due strade tracciano
+            // davvero due volte -- il caricamento passa di qui, il ritracciamento di la' -- e una
+            // differenza fra le due non darebbe un errore: darebbe lo stesso preset che fa due
+            // disegni diversi a seconda da dove lo si e' chiesto.
+            if (p.ScalaDiGrigi) rgb = ParametriTracciato.SenzaColore(rgb);
+
             var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
             // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte
             // un pixel, e ricalcarle darebbe contorni ondulati.
