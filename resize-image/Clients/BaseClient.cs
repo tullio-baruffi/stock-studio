@@ -95,5 +95,28 @@ namespace MJ.Classifier.Clients
         }
 
         protected abstract void UploadFileToSFTP(T settings, Stream fileStream, string fileName);
+
+        /// <summary>
+        /// Chiude la connessione senza mai far fallire l'invio.
+        ///
+        /// Ogni invio sta dentro <see cref="Ritenta"/>, e Ritenta ricomincia da capo a qualunque
+        /// errore di rete. Se a fallire e' la chiusura, il file e' gia' sul server: rifare tutto lo
+        /// caricherebbe una seconda volta, e sul marketplace diventerebbe un doppione per un errore
+        /// che col file non c'entra. Quindi qui un errore si annota e basta.
+        ///
+        /// Se invece l'invio stesso e' fallito, chiudere in silenzio e' quel che serve: l'errore
+        /// che conta e' il suo, e deve arrivare a Ritenta com'e'.
+        /// </summary>
+        protected void Chiudi(Action chiusura, string fileName, string destinazione)
+        {
+            try
+            {
+                chiusura();
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning($"{fileName}: chiusura della connessione con {destinazione} non riuscita ({ex.Message}); non cambia l'esito dell'invio");
+            }
+        }
     }
 }

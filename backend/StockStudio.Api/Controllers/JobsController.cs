@@ -24,10 +24,11 @@ public class JobsController : ControllerBase
     private readonly MetadataFeedbackStore _feedback;
     private readonly PipelineHandoff _handoff;
     private readonly IOptions<VectorizeOptions> _vectorize;
+    private readonly ControlloDoppioni _doppioni;
 
     public JobsController(PipelineService pipeline, IJobStore store, CsvExporter csv, StockPipelineDispatcher dispatcher,
                           JobQueue queue, StockValidator validator, MetadataFeedbackStore feedback,
-                          PipelineHandoff handoff, IOptions<VectorizeOptions> vectorize)
+                          PipelineHandoff handoff, IOptions<VectorizeOptions> vectorize, ControlloDoppioni doppioni)
     {
         _pipeline = pipeline;
         _store = store;
@@ -38,6 +39,31 @@ public class JobsController : ControllerBase
         _feedback = feedback;
         _handoff = handoff;
         _vectorize = vectorize;
+        _doppioni = doppioni;
+    }
+
+    /// <summary>
+    /// Quali delle immagini che stanno per essere consegnate la pipeline ha già.
+    ///
+    /// Si chiede prima di consegnare, non durante: da quando l'originale è in coda l'immagine è
+    /// lavoro della pipeline, e fermarla vorrebbe dire inseguirla fra code e librerie. Il controllo
+    /// avvisa e basta -- rimandare un'immagine di proposito deve restare possibile -- e se non
+    /// riesce lo dice senza impedire la consegna: è una rete in più, non un cancello.
+    /// </summary>
+    [HttpPost("gia-presenti")]
+    public IActionResult GiaPresenti([FromBody] GiaPresentiRichiesta? richiesta)
+    {
+        var nomi = richiesta?.Nomi ?? new List<string>();
+        if (nomi.Count > 500)
+            return BadRequest(new { error = "Al massimo 500 nomi per volta." });
+        try
+        {
+            return Ok(new { controllato = true, presenti = _doppioni.Cerca(nomi) });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { controllato = false, motivo = ex.Message, presenti = Array.Empty<GiaPresente>() });
+        }
     }
 
     [HttpPost]

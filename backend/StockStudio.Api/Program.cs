@@ -122,6 +122,9 @@ builder.Services.AddSingleton<StockStudio.Api.Services.Scoring.Punteggiatore>();
 builder.Services.AddSingleton<StockStudio.Api.Services.Scoring.PunteggioStore>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StockStudio.Api.Services.Scoring.PunteggioStore>());
 
+// Avvisa, prima della consegna, se un'immagine la pipeline l'ha già: vedi ControlloDoppioni.
+builder.Services.AddSingleton<StockStudio.Api.Services.Integration.ControlloDoppioni>();
+
 // Aggancia le vendite ai file che stanno davvero in libreria, scorrendola per intero una volta
 // ogni ora: senza, i rapporti fra ricavi e magazzino userebbero insiemi diversi ai due lati.
 builder.Services.AddSingleton<StockStudio.Api.Services.Insights.AggancioVendite>();

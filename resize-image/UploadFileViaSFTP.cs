@@ -126,9 +126,25 @@ namespace MJ.Classifier
                     log.LogInformation($"File {data.ServerRelativeUrl} - {summary}");
                     message = summary;
 
-                    log.LogInformation($"File {data.ServerRelativeUrl} updating file to SharePoint");
-                    SharePointHelper.UploadFileToSharePoint(_sharePointSettings, fileStreamWithExifMetadata, fileName, folderUrl, context.FunctionDirectory, log);
-                    log.LogInformation($"File {data.ServerRelativeUrl} successfully uploaded file to SharePoint");
+                    // Da qui l'invio ai marketplace e' concluso, e niente di quel che segue deve poter
+                    // far risultare non inviato un file che e' gia' arrivato. Prima un errore nella
+                    // riscrittura su SharePoint -- "Accesso negato" l'11 e il 12/09 -- finiva nel catch
+                    // qui sotto: il file restava fra quelli da inviare con scritto ERRORE, e il nuovo
+                    // invio lo caricava una seconda volta ovunque fosse gia' arrivato
+                    // (Akita_vector_illustrations, il gallo). La copia con i metadati incorporati e' un
+                    // di piu': se non si riesce a scriverla lo si annota nello stato, e il file va fra
+                    // i pubblicati.
+                    try
+                    {
+                        log.LogInformation($"File {data.ServerRelativeUrl} updating file to SharePoint");
+                        SharePointHelper.UploadFileToSharePoint(_sharePointSettings, fileStreamWithExifMetadata, fileName, folderUrl, context.FunctionDirectory, log);
+                        log.LogInformation($"File {data.ServerRelativeUrl} successfully uploaded file to SharePoint");
+                    }
+                    catch (Exception spEx)
+                    {
+                        log.LogWarning(spEx, $"{fileName}: inviato, ma la copia con i metadati non e' stata riscritta su SharePoint ({spEx.Message}). Resta pubblicato: rimandarlo lo caricherebbe una seconda volta.");
+                        message = $"{summary} (copia su SharePoint non aggiornata: {spEx.Message})";
+                    }
 
                     statusCode = 200;
                 }

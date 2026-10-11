@@ -74,6 +74,30 @@ export type HandoffResponse = {
 };
 
 /**
+ * Un'immagine che sta per essere consegnata e che la pipeline ha già.
+ *
+ * Consegnarla di nuovo la rimanderebbe ai marketplace: è così che BBoxer, Boxer e i due Border
+ * collie sono saliti due volte su Adobe Stock e Freepik.
+ */
+export type GiaPresente = {
+  /** Il posto nell'elenco chiesto: due file con lo stesso nome sono due consegne distinte. */
+  posizione: number;
+  nome: string;
+  dove: "pubblicata" | "da-inviare" | "in-lavorazione";
+  /** Il file trovato in SharePoint, per esempio «Volpe2.jpg» fra i pubblicati. */
+  file: string;
+  /** Ultima modifica del file trovato, ISO 8601. */
+  quando?: string | null;
+};
+
+export type GiaPresentiResponse = {
+  /** Falso quando il controllo non è riuscito: allora `presenti` è vuoto e non vuol dire niente. */
+  controllato: boolean;
+  motivo?: string;
+  presenti: GiaPresente[];
+};
+
+/**
  * I numeri con cui si traccia a colori.
  *
  * Sono tutti facoltativi perché "non ho scelto" e "ho scelto zero" devono restare distinguibili:
@@ -846,6 +870,19 @@ export const api = {
     files.forEach((f) => fd.append("files", f, f.name));
     fd.append("mode", mode);
     return f("/api/jobs", { method: "POST", body: fd }).then(jsonOrThrow);
+  },
+  /**
+   * Quali di questi file la pipeline ha già: pubblicati, pronti per l'invio o in lavorazione.
+   *
+   * Si chiede prima di consegnare. Il server non lo considera mai un errore: se SharePoint non
+   * risponde torna `controllato: false` con il motivo, e la consegna resta possibile.
+   */
+  giaPresenti(nomi: string[]): Promise<GiaPresentiResponse> {
+    return f("/api/jobs/gia-presenti", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nomi }),
+    }).then(jsonOrThrow);
   },
   /**
    * Hands the pictures to the durable pipeline and returns as soon as they are deposited.

@@ -11,20 +11,30 @@ namespace MJ.Classifier.Clients
         {
             // Never serialize the settings object here: it carries the password.
             Log.LogInformation($"Creating client for file {fileName} for {ftpSettings.SafeDescription}");
-            using var client = new FtpClient(ftpSettings.Host, ftpSettings.Username, ftpSettings.Password, ftpSettings.Port);
+            var client = new FtpClient(ftpSettings.Host, ftpSettings.Username, ftpSettings.Password, ftpSettings.Port);
+            try
+            {
+                client.Config.RetryAttempts = 3;
 
-            client.Config.RetryAttempts = 3;
+                client.AutoConnect();
 
-            client.AutoConnect();
+                var path = Path.Combine(ftpSettings.RemoteDirectory, fileName);
 
-            var path = Path.Combine(ftpSettings.RemoteDirectory, fileName);
+                Log.LogInformation($"Uploading file {fileName} to {ftpSettings.Name} in {path}");
+                fileStream.Position = 0;
+                client.UploadStream(fileStream, path);
 
-            Log.LogInformation($"Uploading file {fileName} to {ftpSettings.Name} in {path}");
-            fileStream.Position = 0;
-            client.UploadStream(fileStream, path);
-
-            Log.LogInformation($"Upload complete for file {fileName} to {ftpSettings.Name}");
-            client.Disconnect();
+                Log.LogInformation($"Upload complete for file {fileName} to {ftpSettings.Name}");
+            }
+            finally
+            {
+                // Fuori dal blocco dell'invio: vedi Chiudi.
+                Chiudi(() =>
+                {
+                    if (client.IsConnected) client.Disconnect();
+                    client.Dispose();
+                }, fileName, ftpSettings.Name);
+            }
         }
     }
 }

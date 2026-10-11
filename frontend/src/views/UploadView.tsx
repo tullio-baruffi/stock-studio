@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type HandoffResponse, type ParametriTracciato, type PipelineStatus } from "../api";
+import { api, type GiaPresente, type HandoffResponse, type ParametriTracciato, type PipelineStatus } from "../api";
 import { recordDelivery, trackNameFor, type DeliveredFile } from "../deliveries";
 import TracePreview from "../components/TracePreview";
 import PannelloTracciato from "../components/PannelloTracciato";
@@ -59,6 +59,18 @@ function nomeModalita(mode: Modalita): string {
 const fmtSize = (bytes: number) =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
+/** Dove la pipeline ha già un'immagine, in poche parole: per il riquadro e per la conferma. */
+const etichettaPresente = (p: GiaPresente): string => {
+  if (p.dove === "da-inviare") return "già pronta per l'invio";
+  if (p.dove === "in-lavorazione") return "già in lavorazione";
+  if (!p.quando) return "già pubblicata";
+  const quando = new Date(p.quando);
+  const data = quando.toLocaleDateString("it-IT", { day: "numeric", month: "2-digit", year: "numeric" });
+  // «l'11», «l'8», «l'1»: davanti a un numero che si legge con una vocale l'articolo si apostrofa.
+  const articolo = [1, 8, 11].includes(quando.getDate()) ? "l'" : "il ";
+  return `già pubblicata ${articolo}${data}`;
+};
+
 export default function UploadView({
   pipeline,
   onNavigate,
@@ -82,6 +94,17 @@ export default function UploadView({
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  /**
+   * Le immagini in elenco che la pipeline ha già, per id: vedi apriConferma.
+   *
+   * Si controllano all'apertura della conferma e non al momento dell'aggiunta, perché è lì che si
+   * decide; e si ricontrollano ogni volta, perché nel frattempo un'immagine può essere partita.
+   */
+  const [presenti, setPresenti] = useState<Map<string, GiaPresente>>(new Map());
+  const [controllo, setControllo] = useState<"in-corso" | "fatto" | "non-riuscito" | null>(null);
+  const [motivoControllo, setMotivoControllo] = useState<string | null>(null);
+  /** Solo la risposta dell'ultima apertura conta: una più vecchia, arrivata tardi, non la sovrascrive. */
+  const giroControllo = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -127,17 +150,57 @@ export default function UploadView({
 
   const remove = (id: string) => setStaged((prev) => prev.filter((s) => s.id !== id));
 
-  const deliver = async () => {
-    if (staged.length === 0) return;
+  /**
+   * Apre la conferma e intanto chiede quali immagini la pipeline ha già.
+   *
+   * Una consegna ripetuta non è un errore che la pipeline possa riconoscere: per lei ogni
+   * caricamento è un'immagine nuova, e la rimanda ai marketplace. È così che BBoxer, Boxer e i due
+   * Border collie sono saliti due volte su Adobe Stock e Freepik. Il controllo avvisa e lascia
+   * scegliere; se non riesce, lo dice e la consegna resta possibile.
+   */
+  const apriConferma = async () => {
+    const elenco = staged;
+    const giro = ++giroControllo.current;
+    setShowConfirm(true);
+    setPresenti(new Map());
+    setMotivoControllo(null);
+    setControllo("in-corso");
+    try {
+      // Un tetto al controllo: la conferma non deve restare bloccata se SharePoint non risponde.
+      const res = await Promise.race([
+        api.giaPresenti(elenco.map((s) => s.file.name)),
+        new Promise<never>((_, rifiuta) =>
+          setTimeout(() => rifiuta(new Error("SharePoint non ha risposto in tempo")), 20000)
+        ),
+      ]);
+      if (giro !== giroControllo.current) return;
+      const trovate = new Map<string, GiaPresente>();
+      for (const p of res.presenti ?? []) {
+        const s = elenco[p.posizione];
+        if (s) trovate.set(s.id, p);
+      }
+      setPresenti(trovate);
+      setControllo(res.controllato ? "fatto" : "non-riuscito");
+      if (!res.controllato) setMotivoControllo(res.motivo ?? null);
+    } catch (e) {
+      if (giro !== giroControllo.current) return;
+      setControllo("non-riuscito");
+      setMotivoControllo((e as Error).message);
+    }
+  };
+
+  const deliver = async (soloNuove = false) => {
+    const elenco = soloNuove ? staged.filter((s) => !presenti.has(s.id)) : staged;
+    if (elenco.length === 0) return;
     setShowConfirm(false);
     setError(null);
     setDelivering(true);
     setConsegnate(null);
     try {
       const res = await api.handoff(
-        staged.map((s) => s.file),
+        elenco.map((s) => s.file),
         mode,
-        mode === "vector" ? staged.map((s) => s.threshold) : undefined,
+        mode === "vector" ? elenco.map((s) => s.threshold) : undefined,
         // I parametri viaggiano in tutte le modalità che tracciano, non solo a colori: un preset
         // porta con sé anche **come** tracciare, e mandarlo solo quando l'elenco è già su
         // «A colori» vorrebbe dire che scegliere «Silhouette» non arriva da nessuna parte.
@@ -154,7 +217,7 @@ export default function UploadView({
         mode,
         accepted: res.accepted,
         rejected: res.rejected,
-        files: staged.map<DeliveredFile>((s, i) => ({
+        files: elenco.map<DeliveredFile>((s, i) => ({
           name: s.file.name,
           trackName: trackNameFor(s.file.name),
           threshold: mode === "vector" ? s.threshold : null,
@@ -164,10 +227,10 @@ export default function UploadView({
       });
 
       setResult(res);
-      // Only the rejected ones stay on screen: they are the only ones still worth a second attempt,
-      // and clearing them would hide a failure behind a success message.
-      const daRitentare = new Set(staged.filter((_, i) => rifiutataIn.has(i)).map((s) => s.id));
-      setStaged((prev) => prev.filter((s) => daRitentare.has(s.id)));
+      // Restano in elenco le rifiutate, le sole per cui valga un secondo tentativo, e quelle
+      // lasciate fuori perché già presenti: toglierle le farebbe sembrare consegnate.
+      const arrivate = new Set(elenco.filter((_, i) => !rifiutataIn.has(i)).map((s) => s.id));
+      setStaged((prev) => prev.filter((s) => !arrivate.has(s.id)));
       if (res.rejected > 0)
         setError(
           `${res.rejected} non consegnate e rimaste in elenco: ${res.errors?.[0]?.error ?? "errore sconosciuto"}`
@@ -322,7 +385,7 @@ export default function UploadView({
               </button>
               <button
                 className="btn accent"
-                onClick={() => setShowConfirm(true)}
+                onClick={apriConferma}
                 disabled={delivering || storageOff}
               >
                 {delivering
@@ -391,6 +454,13 @@ export default function UploadView({
                     </span>
                     <span className="muted small">{fmtSize(it.file.size)}</span>
                   </div>
+                  {presenti.has(it.id) && (
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <span className="badge warn" title={`Trovato: ${presenti.get(it.id)!.file}`}>
+                        {etichettaPresente(presenti.get(it.id)!)}
+                      </span>
+                    </div>
+                  )}
 
                   {mode === "vector" && (
                     <div className="revector">
@@ -474,13 +544,59 @@ export default function UploadView({
                 Li rivedi e li correggi nel <strong>Backoffice</strong>, prima dell'invio al marketplace.
               </li>
             </ul>
+            {controllo === "in-corso" && (
+              <p className="muted small">Controllo se qualcuna è già passata dalla pipeline…</p>
+            )}
+            {controllo === "non-riuscito" && (
+              <p className="muted small">
+                Non sono riuscito a controllare se qualcuna è già stata pubblicata
+                {motivoControllo ? ` (${motivoControllo})` : ""}: puoi consegnarle lo stesso.
+              </p>
+            )}
+            {presenti.size > 0 && (
+              <div className="in-avviso" role="alert">
+                <strong>
+                  {presenti.size === 1
+                    ? "Un'immagine è già passata dalla pipeline."
+                    : `${presenti.size} immagini sono già passate dalla pipeline.`}
+                </strong>{" "}
+                Consegnarle di nuovo le rimanda ai marketplace, dove diventano doppioni.
+                <ul className="modal-list" style={{ margin: "6px 0 0" }}>
+                  {staged
+                    .filter((s) => presenti.has(s.id))
+                    .slice(0, 8)
+                    .map((s) => (
+                      <li key={s.id}>
+                        <strong>{s.file.name}</strong>: {etichettaPresente(presenti.get(s.id)!)}
+                        {presenti.get(s.id)!.file.toLowerCase() !== s.file.name.toLowerCase()
+                          ? ` (${presenti.get(s.id)!.file})`
+                          : ""}
+                      </li>
+                    ))}
+                </ul>
+                {presenti.size > 8 && <div>e altre {presenti.size - 8}.</div>}
+              </div>
+            )}
             <div className="modal-actions">
               <button ref={cancelRef} className="btn" onClick={() => setShowConfirm(false)}>
                 Annulla
               </button>
-              <button className="btn accent" onClick={deliver}>
-                Sì, consegna
-              </button>
+              {presenti.size > 0 ? (
+                <>
+                  <button className="btn" onClick={() => deliver(false)}>
+                    Consegna tutte ({staged.length})
+                  </button>
+                  {staged.length > presenti.size && (
+                    <button className="btn accent" onClick={() => deliver(true)}>
+                      Consegna solo le nuove ({staged.length - presenti.size})
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button className="btn accent" onClick={() => deliver(false)} disabled={controllo === "in-corso"}>
+                  Sì, consegna
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -19,24 +19,32 @@ namespace MJ.Classifier.Clients
                 Password = settings.Password
             };
 
-            using Session session = new();
-            session.ExecutablePath = Path.Combine(settings.FunctionAppDirectory, "winscp.exe");
-            //Connect
-            Log.LogInformation($"Create connection for file {fileName} to {settings.Name}");
-            session.Open(sessionOptions);
-            Log.LogInformation($"Connection opened for file {fileName} to {settings.Name}");
-
-            var transferOptions = new TransferOptions()
+            var session = new Session();
+            try
             {
-                TransferMode = TransferMode.Binary
-            };
+                session.ExecutablePath = Path.Combine(settings.FunctionAppDirectory, "winscp.exe");
+                //Connect
+                Log.LogInformation($"Create connection for file {fileName} to {settings.Name}");
+                session.Open(sessionOptions);
+                Log.LogInformation($"Connection opened for file {fileName} to {settings.Name}");
 
-            var path = Path.Combine(settings.RemoteDirectory, fileName);
-            Log.LogInformation($"Uploading file {fileName} to {settings.Name} in {path}");
+                var transferOptions = new TransferOptions()
+                {
+                    TransferMode = TransferMode.Binary
+                };
 
-            fileStream.Position = 0;
-            session.PutFile(fileStream, path, transferOptions);
-            Log.LogInformation($"Upload complete for file {fileName} to {settings.Name}");
+                var path = Path.Combine(settings.RemoteDirectory, fileName);
+                Log.LogInformation($"Uploading file {fileName} to {settings.Name} in {path}");
+
+                fileStream.Position = 0;
+                session.PutFile(fileStream, path, transferOptions);
+                Log.LogInformation($"Upload complete for file {fileName} to {settings.Name}");
+            }
+            finally
+            {
+                // Fuori dal blocco dell'invio: vedi Chiudi.
+                Chiudi(session.Dispose, fileName, settings.Name);
+            }
         }
     }
 }
