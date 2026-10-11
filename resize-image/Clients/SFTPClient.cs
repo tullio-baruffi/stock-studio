@@ -16,6 +16,13 @@ namespace MJ.Classifier.Clients
             Log.LogInformation($"Creating client for file {fileName} for {sftpSettings.SafeDescription}");
             var hostUri = new Uri($"sftp://{sftpSettings.Host}:{sftpSettings.Port}");
             using var client = new SftpClient(hostUri.Host, hostUri.Port, sftpSettings.Username, sftpSettings.Password);
+            // I tempi di serie di SSH.NET sono trenta secondi per aprire la sessione e nessun limite
+            // per le operazioni. Il primo era troppo stretto per Freepik nelle ore di carico --
+            // "Session operation has timed out" -- e il secondo lascerebbe una richiesta appesa fino
+            // al tempo massimo della Function. Qui si allarga il primo e si mette un tetto al
+            // secondo; i nuovi tentativi li gestisce Ritenta.
+            client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(45);
+            client.OperationTimeout = TimeSpan.FromSeconds(60);
             client.Connect();
 
             // Set the current directory on the SFTP server

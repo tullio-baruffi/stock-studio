@@ -1,5 +1,7 @@
 // Shared API client + types for the Stock Vector Studio frontend.
 
+import { TETTO_SERVER_MISURATO, dividiInLotti, posizioniGlobali } from "./lotti";
+
 export type ItemFiles = { svg?: string; eps?: string; jpg?: string; ai?: string };
 export type ItemSteps = {
   queuedAt?: string;
@@ -48,8 +50,9 @@ export type HandoffResponse = {
   ok: boolean;
   accepted: number;
   rejected: number;
-  items: { file: string; blob: string; threshold?: number | null }[];
-  errors: { file: string; error: string }[];
+  /** `posizione` è il posto del file nell'elenco consegnato: vedi `rifiutate`. */
+  items: { file: string; blob: string; threshold?: number | null; posizione?: number }[];
+  errors: { file: string; error: string; posizione?: number }[];
   /**
    * La taratura applicata davvero, dopo il controllo sui limiti del servizio.
    *
@@ -59,6 +62,15 @@ export type HandoffResponse = {
    */
   tracciato?: Required<ParametriTracciato> | null;
   message: string;
+  /**
+   * Quali immagini **non** sono arrivate, per posizione nell'elenco consegnato.
+   *
+   * `errors` le nomina per file, e il nome non basta: due immagini con lo stesso nome prese da
+   * cartelle diverse sono due consegne distinte. Riconoscerle per nome terrebbe in elenco anche
+   * quella arrivata, e il secondo tentativo la manderebbe in pipeline una seconda volta. Il server
+   * dà la posizione dentro la sua richiesta; il browser la riporta all'elenco intero.
+   */
+  rifiutate?: { posizione: number; error: string }[];
 };
 
 /**
@@ -704,6 +716,10 @@ async function throwResponseError(res: Response): Promise<never> {
   // App Service authentication normally answers an expired session with its redirect page rather
   // than a 401, but a stale token on an XHR can still land here: either way the cure is a sign-in.
   if (res.status === 401 || res.status === 403) redirectToLogin();
+  // Il corpo troppo grande lo rifiuta la piattaforma, in HTML, prima che la richiesta arrivi
+  // all'applicazione: mostrarne il sorgente non direbbe niente a nessuno, il motivo si'.
+  if (res.status === 413)
+    throw new Error("413: la richiesta supera il limite del server (circa 28 MB). Manda meno file per volta.");
   if (!res.ok) {
     let detail = "";
     try {
@@ -711,6 +727,11 @@ async function throwResponseError(res: Response): Promise<never> {
     } catch {
       detail = "risposta di errore non leggibile";
     }
+    // Una pagina d'errore della piattaforma e' HTML: se ne tiene solo il testo, che e' la parte che
+    // spiega cosa e' successo.
+    if ((res.headers.get("content-type") ?? "").includes("text/html"))
+      detail = detail.replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ").trim().slice(0, 300);
     throw new Error(`${res.status}${detail ? `: ${detail}` : ""}`);
   }
   throw new Error("Errore HTTP inatteso.");
@@ -774,7 +795,18 @@ async function f(url: string, init: RequestInit = {}): Promise<Response> {
     // login per una risposta anomala qualsiasi, e un rimbalzo al login e' l'errore piu' fastidioso
     // che si possa infliggere: riparte, torna, riparte.
     if (res.type === "opaqueredirect") redirectToLogin();
-    if ((res.headers.get("content-type") ?? "").includes("text/html")) redirectToLogin();
+    // Solo una risposta in HTML che riguarda l'**accesso** puo' essere la paginetta di login: un
+    // 200 con il rimando via JavaScript, oppure un 401/403. E' cosi' che la piattaforma risponde a
+    // una sessione scaduta.
+    //
+    // Un altro errore in HTML e' un'altra cosa: e' la piattaforma che rifiuta la richiesta prima che
+    // arrivi qui -- un 413 di IIS per un corpo troppo grande, un 502 o un 503 durante un riavvio.
+    // Prima anche quelli mandavano al login, e il login rimandava subito indietro: la pagina si
+    // ricaricava, l'elenco spariva, e l'errore vero non si vedeva da nessuna parte. E' quel che
+    // succedeva consegnando trenta immagini insieme. Ora quegli errori arrivano a chi ha chiamato,
+    // e throwResponseError li racconta.
+    const html = (res.headers.get("content-type") ?? "").includes("text/html");
+    if (html && (res.ok || res.status === 401 || res.status === 403)) redirectToLogin();
     return res;
   } finally {
     window.clearTimeout(timeout);
@@ -824,12 +856,23 @@ export const api = {
    *
    * `thresholds` carries the tracing cut the author picked per picture, one entry per file in the
    * same order; "auto" leaves that picture to Otsu inside the Function.
+   *
+   * ## Perché in più richieste
+   * Una richiesta sola con tutte le immagini supera il tetto che la piattaforma mette davanti
+   * all'applicazione -- 30.000.000 byte, misurati: oltre, IIS risponde 413 e nessuna immagine entra.
+   * Si consegna quindi a lotti (vedi lotti.ts) e si ricompone **una** risposta, uguale a quella di
+   * prima: chi chiama non deve sapere quante richieste ci sono volute.
+   *
+   * Un lotto che fallisce non ferma gli altri: le sue immagini finiscono fra le rifiutate, con il
+   * motivo, e restano in elenco per un secondo tentativo. Le altre sono già in pipeline, e fermarsi
+   * al primo errore lascerebbe a metà una consegna che poteva riuscire quasi tutta.
+   *
+   * I lotti partono **uno alla volta**: in parallelo il tetto per richiesta resterebbe rispettato,
+   * ma il piano gratuito ha una quota di CPU giornaliera e un lotto da dieci immagini già la impegna.
    */
-  handoff(files: File[], mode: "auto" | "vector" | "colore" | "raster" = "auto",
-          thresholds?: (number | null)[], tracciato?: ParametriTracciato): Promise<HandoffResponse> {
-    const fd = new FormData();
-    files.forEach((file) => fd.append("files", file, file.name));
-    fd.append("mode", mode);
+  async handoff(files: File[], mode: "auto" | "vector" | "colore" | "raster" = "auto",
+                thresholds?: (number | null)[], tracciato?: ParametriTracciato,
+                avanzamento?: (consegnate: number, totale: number) => void): Promise<HandoffResponse> {
     // I numeri del tracciato viaggiano come **un campo JSON solo**, non come campi sciolti.
     //
     // Non è un vezzo: i campi di un modulo multipart ASP.NET li legge con la cultura del server,
@@ -843,14 +886,69 @@ export const api = {
     // mentre zero è una scelta legittima ("non unire niente", "non togliere granelli") e come tale
     // va mandata.
     const scelti = Object.fromEntries(Object.entries(tracciato ?? {}).filter(([, v]) => v != null));
-    if (Object.keys(scelti).length > 0) fd.append("tracciato", JSON.stringify(scelti));
-    // Appended after the files and in the same order: the server pairs the two lists by position,
-    // which is the only pairing that survives two uploads sharing a file name.
-    files.forEach((_, i) => {
-      const t = thresholds?.[i];
-      fd.append("thresholds", t == null ? "auto" : String(Math.round(t)));
-    });
-    return f("/api/jobs/handoff", { method: "POST", body: fd }).then(jsonOrThrow);
+
+    const lotti = dividiInLotti(files.map((file) => file.size));
+    const totale: HandoffResponse = {
+      ok: true, accepted: 0, rejected: 0, items: [], errors: [], tracciato: null, message: "",
+      rifiutate: [],
+    };
+    let fatte = 0;
+    avanzamento?.(0, files.length);
+
+    for (const posizioni of lotti) {
+      const fd = new FormData();
+      posizioni.forEach((i) => fd.append("files", files[i], files[i].name));
+      fd.append("mode", mode);
+      if (Object.keys(scelti).length > 0) fd.append("tracciato", JSON.stringify(scelti));
+      // Appended after the files and in the same order: the server pairs the two lists by position,
+      // which is the only pairing that survives two uploads sharing a file name. Ogni lotto porta
+      // le soglie delle **sue** immagini, prese dalla posizione che avevano nell'elenco intero.
+      posizioni.forEach((i) => {
+        const t = thresholds?.[i];
+        fd.append("thresholds", t == null ? "auto" : String(Math.round(t)));
+      });
+
+      try {
+        const r: HandoffResponse = await f("/api/jobs/handoff", { method: "POST", body: fd }).then(jsonOrThrow);
+        const nomi = files.map((file) => file.name);
+        // Il server numera le immagini dentro la sua richiesta: si riportano all'elenco intero.
+        const items = posizioniGlobali(r.items ?? [], posizioni, nomi);
+        const errors = posizioniGlobali(r.errors ?? [], posizioni, nomi);
+        totale.accepted += r.accepted;
+        totale.rejected += r.rejected;
+        totale.items.push(...items);
+        totale.errors.push(...errors);
+        for (const err of errors)
+          if (err.posizione !== undefined) totale.rifiutate!.push({ posizione: err.posizione, error: err.error });
+        // La taratura applicata è la stessa per tutti i lotti: vale quella dell'ultimo arrivato.
+        if (r.tracciato !== undefined) totale.tracciato = r.tracciato;
+      } catch (e) {
+        // Una sessione scaduta non è un errore del lotto: la pagina sta già andando all'accesso, e
+        // mandare i lotti successivi vorrebbe dire inseguire un rimando con altre richieste.
+        if (e instanceof Error && e.message.startsWith("Sessione scaduta")) throw e;
+        let motivo = e instanceof Error ? e.message : String(e);
+        // Una connessione caduta su un file solo e più grande del tetto misurato è quasi sempre il
+        // server che rifiuta il corpo: lo dice con 413 e chiude mentre il browser sta ancora
+        // mandando, e il browser lo chiama "Failed to fetch". Vedi TETTO_SERVER_MISURATO.
+        const grande = posizioni.length === 1 && files[posizioni[0]].size > TETTO_SERVER_MISURATO;
+        if (grande && e instanceof TypeError)
+          motivo = `${files[posizioni[0]].name} pesa ${(files[posizioni[0]].size / 1e6).toFixed(1)} MB e il server ` +
+            `ha chiuso la connessione: con ogni probabilità supera il limite del server. Riducilo e riprova.`;
+        totale.rejected += posizioni.length;
+        posizioni.forEach((i) => {
+          totale.errors.push({ file: files[i].name, error: motivo, posizione: i });
+          totale.rifiutate!.push({ posizione: i, error: motivo });
+        });
+      }
+
+      fatte += posizioni.length;
+      avanzamento?.(fatte, files.length);
+    }
+
+    totale.ok = totale.rejected === 0;
+    totale.message = `${totale.accepted} immagini consegnate alla pipeline` +
+      (lotti.length > 1 ? ` in ${lotti.length} invii` : "") + ".";
+    return totale;
   },
   getJob(id: string): Promise<Job> {
     return f(`/api/jobs/${id}`).then(jsonOrThrow);

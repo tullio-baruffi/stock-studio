@@ -16,10 +16,15 @@ public class Punteggiatore
 {
     private readonly StockValidator _validator;
     private readonly string _siteRoot;
+    private readonly SharePointStore _sp;
+    private readonly ILogger<Punteggiatore> _log;
 
-    public Punteggiatore(StockValidator validator, IOptions<PipelineSettings> s)
+    public Punteggiatore(StockValidator validator, IOptions<PipelineSettings> s, SharePointStore sp,
+                         ILogger<Punteggiatore> log)
     {
         _validator = validator;
+        _sp = sp;
+        _log = log;
         _siteRoot = string.IsNullOrWhiteSpace(s.Value.SiteUrl)
             ? ""
             : new Uri(s.Value.SiteUrl!).AbsolutePath.TrimEnd('/');
@@ -80,10 +85,127 @@ public class Punteggiatore
             // Pubblicati mostrava una scheda per file -- e di un EPS o di un SVG l'anteprima non
             // esiste, da cui due terzi di riquadri "anteprima non disponibile". Il gruppo non e'
             // fatto dalla cartella: la cartella era solo il modo in cui lo si riconosceva.
-            .GroupBy(i => $"{CartellaDi(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}",
-                     StringComparer.OrdinalIgnoreCase)
+            .GroupBy(i => Chiave(i), StringComparer.OrdinalIgnoreCase)
             .Select(g => g.ToList())
             .ToList();
+
+    /// <summary>Cartella e nome senza estensione: i file che la condividono sono un'immagine sola.</summary>
+    private static string Chiave(SharePointItem i) =>
+        $"{CartellaDi(i.ServerRelativeUrl)}|{Path.GetFileNameWithoutExtension(i.FileName)}";
+
+    /// <summary>I file che compongono una consegna completa del percorso durevole.</summary>
+    private static readonly string[] Consegne = { ".jpg", ".svg", ".eps" };
+
+    /// <summary>
+    /// I gruppi della pagina, completati con i file della stessa immagine che stanno altrove.
+    ///
+    /// ## Il difetto che risolve
+    /// <see cref="Raggruppa"/> lavora sulla pagina, e una pagina sono ventiquattro file in ordine di
+    /// identificativo. In ImagesSent l'identificativo è l'ordine di **arrivo**: move-sent-files
+    /// sposta ogni file quando parte, e se Freepik ne rifiuta uno per timeout quello parte giorni
+    /// dopo, al secondo invio. Allora SVG da una parte, JPG ed EPS dall'altra: due pagine, due
+    /// schede, e quella con l'anteprima senza SVG. Misurato su AB34: SVG partito il 27/09, JPG ed
+    /// EPS l'11/10, scheda «senza SVG» in cima ai Pubblicati con l'SVG regolarmente consegnato.
+    ///
+    /// ## Come
+    /// Per ogni gruppo si chiedono, per percorso esatto, le consegne che mancano: stessa cartella,
+    /// stesso nome, le altre estensioni (<see cref="SharePointStore.ItemsByPaths"/>: niente
+    /// elenco, quindi niente soglia dei cinquemila elementi). Poi <see cref="Completa"/> le
+    /// aggiunge e decide dove mostrare il gruppo.
+    ///
+    /// La prima versione cercava per nome in tutta la libreria, e su ImagesSent SharePoint la
+    /// rifiutava sempre per la soglia: il completamento non è mai partito, e Volpe2 restava divisa
+    /// fra la prima e la terza pagina. Vedi ItemsByPaths.
+    ///
+    /// Se la ricerca non riesce si torna ai gruppi della sola pagina: è quel che si vedeva prima,
+    /// e una galleria con una scheda incompleta è meglio di una galleria che non si apre.
+    ///
+    /// Lo usano tutti i posti che mostrano schede o depositano il punteggio, perché il punteggio
+    /// dipende dal gruppo -- vettoriale o raster -- e due definizioni darebbero due numeri. Restano
+    /// su <see cref="Raggruppa"/> le scansioni statistiche dell'intera libreria (Insights, vendite):
+    /// lì ogni pezzo viene comunque visitato, e una ricerca in più per pagina moltiplicherebbe le
+    /// chiamate a SharePoint senza mostrare niente a nessuno.
+    /// </summary>
+    public List<List<SharePointItem>> RaggruppaCompleti(string library, IReadOnlyList<SharePointItem> items)
+    {
+        var gruppi = Raggruppa(library, items);
+        var percorsi = PercorsiMancanti(gruppi);
+        if (percorsi.Count == 0) return gruppi;
+        try
+        {
+            return Completa(gruppi, _sp.ItemsByPaths(percorsi));
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Completamento dei gruppi non riuscito su {Library}: restano quelli della pagina", library);
+            return gruppi;
+        }
+    }
+
+    /// <summary>
+    /// Per ogni gruppo, dove dovrebbero stare le consegne che nella pagina non ci sono: la sua
+    /// cartella, il suo nome, le estensioni che mancano.
+    ///
+    /// Un elemento senza percorso server-relative (quelli che arrivano dall'indice di ricerca
+    /// possono non averlo) non si completa: non si saprebbe dove guardare.
+    /// </summary>
+    public static HashSet<string> PercorsiMancanti(IEnumerable<List<SharePointItem>> gruppi)
+    {
+        var percorsi = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in gruppi)
+        {
+            var cartella = CartellaDi(g[0].ServerRelativeUrl);
+            var radice = Path.GetFileNameWithoutExtension(g[0].FileName);
+            if (!cartella.StartsWith('/') || string.IsNullOrWhiteSpace(radice)) continue;
+            foreach (var ext in Consegne)
+                if (!g.Any(x => string.Equals(Path.GetExtension(x.FileName), ext, StringComparison.OrdinalIgnoreCase)))
+                    percorsi.Add($"{cartella}/{radice}{ext}");
+        }
+        return percorsi;
+    }
+
+    /// <summary>
+    /// Aggiunge a ogni gruppo i file trovati altrove con la sua stessa chiave, e toglie dalla
+    /// pagina i pezzi che vanno mostrati in un'altra.
+    ///
+    /// Un gruppo si mostra **dove sta il suo raster**: è il portatore, quello con l'anteprima e su
+    /// cui agiscono i pulsanti (<see cref="PortatoreDi"/>). Un pezzo senza raster, il cui raster
+    /// sta in un'altra pagina, qui non compare: là comparirà intero. Senza questa regola
+    /// l'immagine comparirebbe due volte, completa in entrambe le pagine, e il punteggio
+    /// verrebbe scritto su due portatori diversi.
+    ///
+    /// Un gruppo che un raster non ce l'ha da nessuna parte resta dov'è, come prima.
+    /// </summary>
+    public static List<List<SharePointItem>> Completa(List<List<SharePointItem>> gruppi,
+                                                     IEnumerable<SharePointItem> trovati)
+    {
+        var altrove = trovati.GroupBy(Chiave, StringComparer.OrdinalIgnoreCase)
+                             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var risultato = new List<List<SharePointItem>>(gruppi.Count);
+        foreach (var g in gruppi)
+        {
+            if (!altrove.TryGetValue(Chiave(g[0]), out var candidati))
+            {
+                risultato.Add(g);
+                continue;
+            }
+
+            var presenti = new HashSet<int>(g.Select(x => x.Id));
+            var aggiunti = candidati.Where(x => presenti.Add(x.Id)).ToList();
+            if (aggiunti.Count == 0)
+            {
+                risultato.Add(g);
+                continue;
+            }
+
+            if (!g.Any(x => EImmagineRaster(x.FileName)) && aggiunti.Any(x => EImmagineRaster(x.FileName)))
+                continue;
+
+            risultato.Add(g.Concat(aggiunti).ToList());
+        }
+        return risultato;
+    }
 
     /// <summary>
     /// Il portatore del gruppo: il raster, perché è l'unico che si possa vedere in anteprima e

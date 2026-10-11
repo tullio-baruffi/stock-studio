@@ -23,6 +23,18 @@ if (!string.IsNullOrWhiteSpace(keyVaultUri))
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// Quanto puo' essere grande il corpo di una richiesta. Sono tre tetti in fila -- IIS (web.config),
+// il server in-process e il parser dei moduli multipart -- e comanda sempre il piu' basso: alzarne
+// uno solo sposta il rifiuto sul successivo senza farlo sparire. Di serie valgono 30, 30 e 128 MB.
+//
+// Il valore e' quello del [RequestSizeLimit] sui due caricamenti di JobsController. Qui vale per
+// tutto il sito, ma l'attributo resta: e' li' che si legge, guardando l'azione, quanto accetta.
+// Gli altri endpoint ricevono JSON di pochi kilobyte, e un tetto alto non costa niente finche'
+// il corpo non arriva davvero.
+const long CorpoMassimo = 500_000_000;
+builder.Services.Configure<Microsoft.AspNetCore.Builder.IISServerOptions>(o => o.MaxRequestBodySize = CorpoMassimo);
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = CorpoMassimo);
+
 // Telemetry, when a connection string is configured. The Function already reports to the same
 // Application Insights resource, so site and pipeline end up on one timeline.
 var aiConnection = builder.Configuration["ApplicationInsights:ConnectionString"];

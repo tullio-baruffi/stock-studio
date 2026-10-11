@@ -234,7 +234,7 @@ public class PunteggioStore : BackgroundService
         }
 
         var daScrivere = new Dictionary<int, int>();
-        foreach (var gruppo in _punteggiatore.Raggruppa(libreria, page.Items))
+        foreach (var gruppo in _punteggiatore.RaggruppaCompleti(libreria, page.Items))
         {
             var portatore = Punteggiatore.PortatoreDi(gruppo);
             var punteggio = _punteggiatore.Valuta(gruppo).Score;

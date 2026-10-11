@@ -14,5 +14,12 @@ namespace MJ.Classifier.Models
         /// file non vengono presi in carico due volte.
         /// </summary>
         public string LibraryFolder { get; set; } = "/sites/Classifier/ImagesToClassify";
+
+        /// <summary>
+        /// Dove move-sent-files mette ogni file appena inviato: la radice dei pubblicati, senza
+        /// sottocartelle. Serve a riconoscere il JPEG di un gruppo vettoriale anche quando SVG ed
+        /// EPS sono gia' partiti e non gli stanno piu' accanto.
+        /// </summary>
+        public string InviatiFolder { get; set; } = "/sites/Classifier/ImagesSent";
     }
 }

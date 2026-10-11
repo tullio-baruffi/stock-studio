@@ -53,7 +53,13 @@ namespace MJ.Classifier.Clients
                 {
                     try
                     {
-                        UploadFileToSFTP(upload.Setting, upload.Content, fileName);
+                        // Ogni tentativo riparte dall'inizio del contenuto: quello fallito l'ha
+                        // letto in parte, e un nuovo invio da metà spedirebbe un file troncato.
+                        Ritenta.Esegui(Log, upload.Setting.Name, fileName, () =>
+                        {
+                            upload.Content.Position = 0;
+                            UploadFileToSFTP(upload.Setting, upload.Content, fileName);
+                        });
                         outcomes.Add(new UploadOutcome { Destination = upload.Setting.Name, Succeeded = true });
                     }
                     catch (Exception e)

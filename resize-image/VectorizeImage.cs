@@ -372,7 +372,8 @@ namespace MJ.Classifier
             // disegni diversi a seconda da dove lo si e' chiesto.
             if (p.ScalaDiGrigi) rgb = ParametriTracciato.SenzaColore(rgb);
 
-            var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi);
+            var tavolozza = Tavolozza.Riduci(rgb, src.Width, src.Height, p.NumeroColori, p.SogliaUnione, opachi,
+                                             metrica: p.Metrica);
             // I confini si lisciano prima di tracciare: nella mappa dei colori sono scalinate alte
             // un pixel, e ricalcarle darebbe contorni ondulati.
             Tavolozza.LisciaPerTracciato(tavolozza, src.Width, src.Height, lisciatura);

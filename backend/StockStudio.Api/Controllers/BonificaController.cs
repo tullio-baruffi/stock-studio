@@ -179,7 +179,7 @@ public class BonificaController : ControllerBase
             var page = _sp.ListItems(library, take, pageToken, null, null, null, punteggioMax);
             var adesso = DateTimeOffset.UtcNow;
 
-            var righe = _punteggiatore.Raggruppa(library, page.Items).Select(gruppo =>
+            var righe = _punteggiatore.RaggruppaCompleti(library, page.Items).Select(gruppo =>
             {
                 var i = Punteggiatore.PortatoreDi(gruppo);
                 var kw = Punteggiatore.KeywordDi(i.Tags);

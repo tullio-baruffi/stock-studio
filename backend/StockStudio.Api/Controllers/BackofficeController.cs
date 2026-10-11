@@ -293,7 +293,7 @@ public class BackofficeController : ControllerBase
                 var page = _sp.ListItems(library, Math.Clamp(take, 1, 100), cursore, null, null);
                 letti += page.Items.Count;
 
-                foreach (var group in _punteggiatore.Raggruppa(library, page.Items))
+                foreach (var group in _punteggiatore.RaggruppaCompleti(library, page.Items))
                 {
                     gruppi++;
                     var i = Punteggiatore.PortatoreDi(group);
@@ -350,7 +350,7 @@ public class BackofficeController : ControllerBase
             // serve qui, nella lettura del singolo elemento e nel riempimento che lo deposita in
             // libreria, e tre definizioni diverse dello stesso numero sono tre occasioni di
             // divergere in silenzio.
-            var groups = _punteggiatore.Raggruppa(library, page.Items);
+            var groups = _punteggiatore.RaggruppaCompleti(library, page.Items);
 
             var items = groups.Select(group =>
             {

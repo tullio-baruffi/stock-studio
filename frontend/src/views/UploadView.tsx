@@ -76,6 +76,8 @@ export default function UploadView({
   const [tracciato, setTracciato] = useState<ParametriTracciato>({});
   const [staged, setStaged] = useState<Staged[]>([]);
   const [delivering, setDelivering] = useState(false);
+  /** Quante immagini sono già partite, durante una consegna a più invii. */
+  const [consegnate, setConsegnate] = useState<{ fatte: number; totale: number } | null>(null);
   const [result, setResult] = useState<HandoffResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -130,6 +132,7 @@ export default function UploadView({
     setShowConfirm(false);
     setError(null);
     setDelivering(true);
+    setConsegnate(null);
     try {
       const res = await api.handoff(
         staged.map((s) => s.file),
@@ -138,29 +141,33 @@ export default function UploadView({
         // I parametri viaggiano in tutte le modalità che tracciano, non solo a colori: un preset
         // porta con sé anche **come** tracciare, e mandarlo solo quando l'elenco è già su
         // «A colori» vorrebbe dire che scegliere «Silhouette» non arriva da nessuna parte.
-        mode === "raster" ? undefined : tracciato
+        mode === "raster" ? undefined : tracciato,
+        (fatte, totale) => setConsegnate({ fatte, totale })
       );
 
-      const failedBy = new Map((res.errors ?? []).map((e) => [e.file, e.error]));
+      // Per posizione, non per nome: due immagini omonime sono due consegne, e riconoscerle per
+      // nome terrebbe in elenco anche quella arrivata -- il secondo tentativo la duplicherebbe.
+      const rifiutataIn = new Map((res.rifiutate ?? []).map((r) => [r.posizione, r.error]));
       recordDelivery({
         id: nextId(),
         at: new Date().toISOString(),
         mode,
         accepted: res.accepted,
         rejected: res.rejected,
-        files: staged.map<DeliveredFile>((s) => ({
+        files: staged.map<DeliveredFile>((s, i) => ({
           name: s.file.name,
           trackName: trackNameFor(s.file.name),
           threshold: mode === "vector" ? s.threshold : null,
-          ok: !failedBy.has(s.file.name),
-          error: failedBy.get(s.file.name),
+          ok: !rifiutataIn.has(i),
+          error: rifiutataIn.get(i),
         })),
       });
 
       setResult(res);
       // Only the rejected ones stay on screen: they are the only ones still worth a second attempt,
       // and clearing them would hide a failure behind a success message.
-      setStaged((prev) => prev.filter((s) => failedBy.has(s.file.name)));
+      const daRitentare = new Set(staged.filter((_, i) => rifiutataIn.has(i)).map((s) => s.id));
+      setStaged((prev) => prev.filter((s) => daRitentare.has(s.id)));
       if (res.rejected > 0)
         setError(
           `${res.rejected} non consegnate e rimaste in elenco: ${res.errors?.[0]?.error ?? "errore sconosciuto"}`
@@ -169,6 +176,7 @@ export default function UploadView({
       setError((e as Error).message);
     } finally {
       setDelivering(false);
+      setConsegnate(null);
     }
   };
 
@@ -273,7 +281,7 @@ export default function UploadView({
         </div>
       )}
 
-      {result && (
+      {result && result.accepted > 0 && (
         <div className="notice success handoff-done" role="status">
           <button className="notice-close" onClick={() => setResult(null)} aria-label="Chiudi">
             ×
@@ -317,7 +325,11 @@ export default function UploadView({
                 onClick={() => setShowConfirm(true)}
                 disabled={delivering || storageOff}
               >
-                {delivering ? "Consegna…" : "Consegna alla pipeline"}
+                {delivering
+                  ? consegnate && consegnate.totale > 0
+                    ? `Consegna ${consegnate.fatte}/${consegnate.totale}…`
+                    : "Consegna…"
+                  : "Consegna alla pipeline"}
               </button>
             </div>
           </div>

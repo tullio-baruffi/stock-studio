@@ -565,6 +565,20 @@ public class SharePointStore
         "<ViewFields>" + string.Concat(ColonneUtili.Select(c => $"<FieldRef Name='{c}'/>")) + "</ViewFields>";
 
     /// <summary>
+    /// Le stesse colonne, nella forma che serve per caricare un elemento solo (i =&gt; i["Title"]).
+    /// Va costruita come la costruisce il compilatore, cioè come chiamata a get_Item con il nome
+    /// costante: la forma "indice" (Expression.Property) CSOM la rifiuta.
+    /// </summary>
+    private static readonly System.Linq.Expressions.Expression<Func<ListItem, object>>[] CampiUtili =
+        ColonneUtili.Select(c =>
+        {
+            var i = System.Linq.Expressions.Expression.Parameter(typeof(ListItem), "i");
+            var getItem = typeof(ListItem).GetProperty("Item", new[] { typeof(string) })!.GetGetMethod()!;
+            return System.Linq.Expressions.Expression.Lambda<Func<ListItem, object>>(
+                System.Linq.Expressions.Expression.Call(i, getItem, System.Linq.Expressions.Expression.Constant(c)), i);
+        }).Append(i => i.Id).ToArray();
+
+    /// <summary>
     /// Legge un gruppo di elementi per identificativo.
     ///
     /// Una sola andata, con l'elenco delle colonne: l'identificativo è indicizzato, quindi non
@@ -589,6 +603,54 @@ public class SharePointStore
         return items.Where(i => !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
                     .Select(ToItem)
                     .ToList();
+    }
+
+    /// <summary>
+    /// I file che stanno esattamente a questi percorsi, fra quelli che esistono.
+    ///
+    /// ## Perché per percorso e non per nome
+    /// La prima versione cercava per nome in tutta la libreria, con un'uguaglianza su FileLeafRef.
+    /// Su ImagesSent non è mai passata: quella colonna non è indicizzata, e oltre i cinquemila
+    /// elementi SharePoint rifiuta la scansione («supera la soglia della visualizzazione elenco»).
+    /// L'11/10/2026, appena pubblicata, ha fallito su ogni pagina dei Pubblicati, e il
+    /// completamento tornava sempre ai gruppi della pagina: Volpe2 con il solo JPG in prima
+    /// pagina, SVG ed EPS in terza. Su ImagesToClassify, sotto soglia, passava ma costava due
+    /// secondi e mezzo a pagina contro duecento millisecondi.
+    ///
+    /// Un percorso invece si risolve direttamente, senza elenco: non c'è scansione e non c'è
+    /// soglia. Ed è tutto quel che serve, perché un gruppo è cartella più nome
+    /// (Punteggiatore.Chiave): chi completa sa già dove dovrebbero stare i file che mancano.
+    ///
+    /// ## Due andate
+    /// Prima si chiede quali esistono; poi i campi dei soli file trovati. Chiedere nella stessa
+    /// andata i campi di un file che non c'è farebbe fallire l'andata intera.
+    /// </summary>
+    public List<SharePointItem> ItemsByPaths(IReadOnlyCollection<string> serverRelativeUrls)
+    {
+        var risultato = new List<SharePointItem>();
+        if (serverRelativeUrls.Count == 0) return risultato;
+
+        using var ctx = CreateContext();
+        // A blocchi: una pagina da cento elementi può chiedere fino a duecento percorsi, e una sola
+        // andata con duecento richieste rischia il rifiuto di SharePoint per richiesta troppo pesante.
+        foreach (var blocco in serverRelativeUrls.Chunk(50))
+        {
+            var file = blocco.Select(u => ctx.Web.GetFileByServerRelativePath(ResourcePath.FromDecodedUrl(u))).ToList();
+            foreach (var f in file) ctx.Load(f, x => x.Exists);
+            ctx.ExecuteQuery();
+
+            var esistenti = file.Where(f => f.Exists).ToList();
+            if (esistenti.Count == 0) continue;
+
+            foreach (var f in esistenti) ctx.Load(f.ListItemAllFields, CampiUtili);
+            ctx.ExecuteQuery();
+
+            risultato.AddRange(esistenti
+                .Select(f => f.ListItemAllFields)
+                .Where(i => i.ServerObjectIsNull != true && !string.Equals(Str(i, "FSObjType"), "1", StringComparison.Ordinal))
+                .Select(ToItem));
+        }
+        return risultato;
     }
 
     /// <summary>

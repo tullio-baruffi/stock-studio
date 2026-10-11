@@ -204,13 +204,19 @@ namespace StockStudio.Shared.Vettoriale
         /// grande quanto la tavola. Misurato su un logo con fondo trasparente: il nero occupava il
         /// 46% dell'immagine ed era la prima voce della tavolozza.
         /// </param>
+        /// <param name="metrica">
+        /// In quale spazio misurare le distanze fra colori. Null vuol dire RGB, cioe' il
+        /// comportamento di sempre: vedi <see cref="MetricaColore"/>.
+        /// </param>
         public static Esito Riduci(byte[] rgb, int larghezza, int altezza, int quanti,
                                    double sogliaUnione = UnionePredefinita, bool[]? opachi = null,
-                                   double? sogliaGemelle = null)
+                                   double? sogliaGemelle = null, MetricaColore? metrica = null)
         {
             if (rgb == null) throw new ArgumentNullException("rgb");
             if (quanti < 2) quanti = 2;
             if (quanti > 64) quanti = 64;
+
+            var m = metrica ?? MetricaColore.Rgb;
 
             // Si quantizza su una copia appianata, ma i colori restituiti descrivono comunque
             // l'immagine vera: il filtro toglie l'increspatura, non sposta le tinte.
@@ -312,7 +318,7 @@ namespace StockStudio.Shared.Vettoriale
             // dei pixel che gli appartengono, e questo cambia esattamente i casi che si notano --
             // misurato: un pesce arancione su fondo marrone usciva rosa slavato con otto tinte,
             // e con la stessa tavolozza raffinata esce arancione.
-            Raffina(istogramma, colori);
+            Raffina(istogramma, colori, m);
             var storia = new Passaggi { Chieste = quanti, DalTaglio = colori.Length };
 
             // Poi si ricontrolla se e' rimasto fuori qualcosa di importante. Serve perche' sia il
@@ -321,7 +327,7 @@ namespace StockStudio.Shared.Vettoriale
             // lo 0,06% dell'errore, quindi nessuno dei due gli assegna mai una tinta, nemmeno
             // dandogliene sedici -- misurato sull'immagine vera, dove le tinte in piu' finivano
             // tutte su marroni intermedi mentre il pesce restava beige.
-            SalvaIColoriDimenticati(istogramma, colori, pixel);
+            SalvaIColoriDimenticati(istogramma, colori, pixel, m);
             storia.DopoIDimenticati = colori.Length;
 
             // Le tinte quasi identiche fra loro si fondono. Non e' un'ottimizzazione: due tinte
@@ -334,7 +340,7 @@ namespace StockStudio.Shared.Vettoriale
             // decisa.
             var gemelle = sogliaGemelle ?? SogliaGemelle(quanti);
             storia.Gemelle = gemelle;
-            colori = UnisciGemelle(istogramma, colori, gemelle);
+            colori = UnisciGemelle(istogramma, colori, gemelle, m);
             storia.DopoLeGemelle = colori.Length;
 
             // La fusione libera posti, e i posti liberati vanno spesi: chi ha chiesto sedici tinte
@@ -352,21 +358,16 @@ namespace StockStudio.Shared.Vettoriale
             // sola: assegnare ogni pixel cercando il colore piu' vicino fra N costerebbe
             // pixel x N confronti, qui sono trentaduemila caselle e basta.
             var perChiave = new Dictionary<int, byte>(istogramma.Count);
+            var portati = PortaTavolozza(m, colori);
             foreach (var chiave in istogramma.Keys)
             {
                 var r = Centro((chiave >> (Bit * 2)) & (Livelli - 1));
                 var g = Centro((chiave >> Bit) & (Livelli - 1));
                 var b = Centro(chiave & (Livelli - 1));
 
-                byte migliore = 0;
-                var minimo = double.MaxValue;
-                for (byte i = 0; i < colori.Length; i++)
-                {
-                    double dr = colori[i].R - r, dg = colori[i].G - g, db = colori[i].B - b;
-                    var d = dr * dr + dg * dg + db * db;
-                    if (d < minimo) { minimo = d; migliore = i; }
-                }
-                perChiave[chiave] = migliore;
+                double x, y, z, quanto;
+                m.Porta(r, g, b, out x, out y, out z);
+                perChiave[chiave] = (byte)PiuVicino(portati, x, y, z, out quanto);
             }
 
             var indici = new byte[pixel];
@@ -376,7 +377,7 @@ namespace StockStudio.Shared.Vettoriale
                 var chiave = ((piano[p] >> Scarto) << (Bit * 2))
                            | ((piano[p + 1] >> Scarto) << Bit)
                            | (piano[p + 2] >> Scarto);
-                indici[i] = Assegna(perChiave, colori, chiave);
+                indici[i] = Assegna(perChiave, portati, m, chiave);
             }
 
             Spolvera(indici, larghezza, altezza);
@@ -1391,7 +1392,7 @@ namespace StockStudio.Shared.Vettoriale
         /// Si tiene la tinta piu' estesa delle due, e si rimette a fuoco quel che resta.
         /// </summary>
         private static Colore[] UnisciGemelle(Dictionary<int, int> istogramma, Colore[] colori,
-                                              double soglia)
+                                              double soglia, MetricaColore m)
         {
             // Sotto questa distanza due colori sono lo stesso colore. Il valore arriva da
             // <see cref="SogliaGemelle"/>: vedi li' perche' non e' piu' una costante.
@@ -1429,8 +1430,8 @@ namespace StockStudio.Shared.Vettoriale
                     {
                         for (var j = i + 1; j < vivi.Count; j++)
                         {
-                            double dr = vivi[i].R - vivi[j].R, dg = vivi[i].G - vivi[j].G, db = vivi[i].B - vivi[j].B;
-                            if (dr * dr + dg * dg + db * db >= StessoColore) continue;
+                            if (m.Distanza2(vivi[i].R, vivi[i].G, vivi[i].B,
+                                            vivi[j].R, vivi[j].G, vivi[j].B) >= StessoColore) continue;
 
                             // Si sacrifica la meno estesa: quella piu' grande descrive la campitura
                             // vera, la piccola ne e' una scheggia.
@@ -1448,7 +1449,7 @@ namespace StockStudio.Shared.Vettoriale
                 // Rimessa a fuoco sulla tavolozza accorciata. Il giro successivo verifica se questo
                 // spostamento ha avvicinato due superstiti oltre il lecito.
                 var passo = vivi.ToArray();
-                Raffina(istogramma, passo);
+                Raffina(istogramma, passo, m);
                 vivi = new List<Colore>(passo);
             }
 
@@ -1521,7 +1522,8 @@ namespace StockStudio.Shared.Vettoriale
         /// vanno comunque messi da qualche parte -- dal lato piu' vicino, che e' proprio quel che
         /// rende netto il bordo.
         /// </summary>
-        private static byte Assegna(Dictionary<int, byte> cache, Colore[] colori, int chiave)
+        private static byte Assegna(Dictionary<int, byte> cache, double[] portati, MetricaColore m,
+                                    int chiave)
         {
             byte gia;
             if (cache.TryGetValue(chiave, out gia)) return gia;
@@ -1530,14 +1532,9 @@ namespace StockStudio.Shared.Vettoriale
             var g = Centro((chiave >> Bit) & (Livelli - 1));
             var b = Centro(chiave & (Livelli - 1));
 
-            byte migliore = 0;
-            var minimo = double.MaxValue;
-            for (byte i = 0; i < colori.Length; i++)
-            {
-                double dr = colori[i].R - r, dg = colori[i].G - g, db = colori[i].B - b;
-                var d = dr * dr + dg * dg + db * db;
-                if (d < minimo) { minimo = d; migliore = i; }
-            }
+            double x, y, z, ignorata;
+            m.Porta(r, g, b, out x, out y, out z);
+            var migliore = (byte)PiuVicino(portati, x, y, z, out ignorata);
             cache[chiave] = migliore;
             return migliore;
         }
@@ -1755,7 +1752,8 @@ namespace StockStudio.Shared.Vettoriale
         /// distingue di meno -- invece di aggiungerne una: chi ha chiesto otto tinte ne vuole otto,
         /// e ogni tinta e' una passata di potrace.
         /// </summary>
-        private static void SalvaIColoriDimenticati(Dictionary<int, int> istogramma, Colore[] colori, int pixel)
+        private static void SalvaIColoriDimenticati(Dictionary<int, int> istogramma, Colore[] colori,
+                                                    int pixel, MetricaColore m)
         {
             if (colori.Length < 4) return;
 
@@ -1770,24 +1768,37 @@ namespace StockStudio.Shared.Vettoriale
             // deve valerne la pena.
             const double DistanzaMinima = 30 * 30 * 3;
 
+            // Le caselle si portano nello spazio di misura una volta sola. Qui sotto c'e' un ciclo
+            // dentro l'altro sull'istogramma: convertire la' dentro vorrebbe dire rifare le radici
+            // cubiche una volta per ogni coppia candidata.
+            var quante = istogramma.Count;
+            var chiavi = new int[quante];
+            var conteggi = new int[quante];
+            var bx = new double[quante];
+            var by = new double[quante];
+            var bz = new double[quante];
+            var k = 0;
+            foreach (var kv in istogramma)
+            {
+                double r = ((kv.Key >> (Bit * 2)) & (Livelli - 1)) << Scarto;
+                double g = ((kv.Key >> Bit) & (Livelli - 1)) << Scarto;
+                double b = (kv.Key & (Livelli - 1)) << Scarto;
+                m.Porta(r, g, b, out bx[k], out by[k], out bz[k]);
+                chiavi[k] = kv.Key;
+                conteggi[k] = kv.Value;
+                k++;
+            }
+
             for (var tentativo = 0; tentativo < 2; tentativo++)
             {
                 double peggiore = 0;
                 int chiavePeggiore = -1;
+                var portati = PortaTavolozza(m, colori);
 
-                foreach (var kv in istogramma)
+                for (var i = 0; i < quante; i++)
                 {
-                    double r = ((kv.Key >> (Bit * 2)) & (Livelli - 1)) << Scarto;
-                    double g = ((kv.Key >> Bit) & (Livelli - 1)) << Scarto;
-                    double b = (kv.Key & (Livelli - 1)) << Scarto;
-
-                    var vicino = double.MaxValue;
-                    for (var i = 0; i < colori.Length; i++)
-                    {
-                        double dr = colori[i].R - r, dg = colori[i].G - g, db = colori[i].B - b;
-                        var d = dr * dr + dg * dg + db * db;
-                        if (d < vicino) vicino = d;
-                    }
+                    double vicino;
+                    PiuVicino(portati, bx[i], by[i], bz[i], out vicino);
                     if (vicino < DistanzaMinima || vicino <= peggiore) continue;
 
                     // I pixel di un soggetto piccolo non stanno in una casella sola: l'antialiasing
@@ -1796,18 +1807,17 @@ namespace StockStudio.Shared.Vettoriale
                     // candidato -- misurato: senza questa somma il pesce non veniva mai salvato,
                     // perche' le sue ottocento occorrenze erano divise in gruppetti da poche decine.
                     var insieme = 0;
-                    foreach (var kv2 in istogramma)
+                    for (var j = 0; j < quante; j++)
                     {
-                        double r2 = ((kv2.Key >> (Bit * 2)) & (Livelli - 1)) << Scarto;
-                        double g2 = ((kv2.Key >> Bit) & (Livelli - 1)) << Scarto;
-                        double b2 = (kv2.Key & (Livelli - 1)) << Scarto;
-                        var dd = (r2 - r) * (r2 - r) + (g2 - g) * (g2 - g) + (b2 - b) * (b2 - b);
-                        if (dd <= DistanzaMinima) insieme += kv2.Value;
+                        var dx = bx[j] - bx[i];
+                        var dy = by[j] - by[i];
+                        var dz = bz[j] - bz[i];
+                        if (dx * dx + dy * dy + dz * dz <= DistanzaMinima) insieme += conteggi[j];
                     }
                     if (insieme < minimo) continue;
 
                     peggiore = vicino;
-                    chiavePeggiore = kv.Key;
+                    chiavePeggiore = chiavi[i];
                 }
 
                 if (chiavePeggiore < 0) return;
@@ -1820,8 +1830,8 @@ namespace StockStudio.Shared.Vettoriale
                     for (var j = 0; j < colori.Length; j++)
                     {
                         if (i == j) continue;
-                        double dr = colori[i].R - colori[j].R, dg = colori[i].G - colori[j].G, db = colori[i].B - colori[j].B;
-                        var d = dr * dr + dg * dg + db * db;
+                        var d = m.Distanza2(colori[i].R, colori[i].G, colori[i].B,
+                                            colori[j].R, colori[j].G, colori[j].B);
                         if (d < minDistanza) { minDistanza = d; daSostituire = i; }
                     }
                 if (daSostituire < 0 || minDistanza >= peggiore) return;
@@ -1830,7 +1840,7 @@ namespace StockStudio.Shared.Vettoriale
 
                 // Rimessa a fuoco: la tinta nuova va portata al centro dei pixel che ora le
                 // toccano, e le vicine vanno lasciate riassestare attorno.
-                Raffina(istogramma, colori);
+                Raffina(istogramma, colori, m);
             }
         }
 
@@ -1879,38 +1889,51 @@ namespace StockStudio.Shared.Vettoriale
         /// Poche passate bastano -- dopo la quarta o quinta i colori si spostano di meno di un
         /// livello, e continuare sarebbe tempo speso per una differenza che nessuno vede.
         /// </summary>
-        private static void Raffina(Dictionary<int, int> istogramma, Colore[] colori)
+        private static void Raffina(Dictionary<int, int> istogramma, Colore[] colori, MetricaColore m)
         {
             if (colori.Length < 2) return;
 
             var n = colori.Length;
-            var sr = new double[n];
-            var sg = new double[n];
-            var sb = new double[n];
+            var sx = new double[n];
+            var sy = new double[n];
+            var sz = new double[n];
             var peso = new double[n];
+
+            // Le caselle si portano nello spazio di misura **una volta sola**, fuori dai giri:
+            // sono fino a trentaduemila, i giri sono sei, e in Oklab ogni conversione ha tre
+            // radici cubiche dentro. Convertirle a ogni giro sarebbe sei volte il lavoro per lo
+            // stesso risultato.
+            var quante = istogramma.Count;
+            var px = new double[quante];
+            var py = new double[quante];
+            var pz = new double[quante];
+            var quanti = new int[quante];
+            var k = 0;
+            foreach (var kv in istogramma)
+            {
+                double r = Centro((kv.Key >> (Bit * 2)) & (Livelli - 1));
+                double g = Centro((kv.Key >> Bit) & (Livelli - 1));
+                double b = Centro(kv.Key & (Livelli - 1));
+                m.Porta(r, g, b, out px[k], out py[k], out pz[k]);
+                quanti[k] = kv.Value;
+                k++;
+            }
 
             for (var giro = 0; giro < 6; giro++)
             {
-                Array.Clear(sr, 0, n); Array.Clear(sg, 0, n);
-                Array.Clear(sb, 0, n); Array.Clear(peso, 0, n);
+                Array.Clear(sx, 0, n); Array.Clear(sy, 0, n);
+                Array.Clear(sz, 0, n); Array.Clear(peso, 0, n);
 
-                foreach (var kv in istogramma)
+                var portati = PortaTavolozza(m, colori);
+
+                for (var i = 0; i < quante; i++)
                 {
-                    var chiave = kv.Key;
-                    var q = kv.Value;
-                    double r = Centro((chiave >> (Bit * 2)) & (Livelli - 1));
-                    double g = Centro((chiave >> Bit) & (Livelli - 1));
-                    double b = Centro(chiave & (Livelli - 1));
-
-                    var migliore = 0;
-                    var minimo = double.MaxValue;
-                    for (var i = 0; i < n; i++)
-                    {
-                        double dr = colori[i].R - r, dg = colori[i].G - g, db = colori[i].B - b;
-                        var d = dr * dr + dg * dg + db * db;
-                        if (d < minimo) { minimo = d; migliore = i; }
-                    }
-                    sr[migliore] += r * q; sg[migliore] += g * q; sb[migliore] += b * q;
+                    double ignorata;
+                    var migliore = PiuVicino(portati, px[i], py[i], pz[i], out ignorata);
+                    var q = quanti[i];
+                    sx[migliore] += px[i] * q;
+                    sy[migliore] += py[i] * q;
+                    sz[migliore] += pz[i] * q;
                     peso[migliore] += q;
                 }
 
@@ -1920,14 +1943,58 @@ namespace StockStudio.Shared.Vettoriale
                     // Un colore rimasto senza pixel si lascia dov'e': spostarlo a caso non
                     // aggiungerebbe una tinta utile, ne toglierebbe una gia' assestata.
                     if (peso[i] <= 0) continue;
-                    var nr = Arrotonda(sr[i] / peso[i]);
-                    var ng = Arrotonda(sg[i] / peso[i]);
-                    var nb = Arrotonda(sb[i] / peso[i]);
+
+                    // Il centro si calcola **nello spazio in cui si misura** e poi si riporta a
+                    // RGB. Mediare in RGB dei punti le cui distanze sono state misurate in Oklab
+                    // darebbe un punto che non minimizza quelle distanze, e Lloyd smetterebbe di
+                    // essere Lloyd: convergerebbe altrove, o non convergerebbe.
+                    double mr, mg, mb;
+                    m.Riporta(sx[i] / peso[i], sy[i] / peso[i], sz[i] / peso[i], out mr, out mg, out mb);
+
+                    var nr = Arrotonda(mr);
+                    var ng = Arrotonda(mg);
+                    var nb = Arrotonda(mb);
                     spostamento += Math.Abs(nr - colori[i].R) + Math.Abs(ng - colori[i].G) + Math.Abs(nb - colori[i].B);
                     colori[i] = new Colore(nr, ng, nb, colori[i].Pixel);
                 }
                 if (spostamento < n) break;   // meno di un livello a colore: si e' assestato
             }
+        }
+
+        /// <summary>
+        /// I colori della tavolozza portati nello spazio in cui si misura, tre numeri l'uno.
+        /// Sono poche decine: si rifa' a ogni giro di Lloyd senza che si noti.
+        /// </summary>
+        private static double[] PortaTavolozza(MetricaColore m, Colore[] colori)
+        {
+            var t = new double[colori.Length * 3];
+            for (var i = 0; i < colori.Length; i++)
+                m.Porta(colori[i].R, colori[i].G, colori[i].B,
+                        out t[i * 3], out t[i * 3 + 1], out t[i * 3 + 2]);
+            return t;
+        }
+
+        /// <summary>
+        /// Quale tinta e' piu' vicina a un punto gia' portato nello spazio di misura, e quanto
+        /// dista. A parita' di distanza vince la prima, come faceva ogni copia di questo ciclo
+        /// prima che diventassero una sola.
+        /// </summary>
+        private static int PiuVicino(double[] tavolozza, double x, double y, double z,
+                                     out double distanza)
+        {
+            var migliore = 0;
+            var minimo = double.MaxValue;
+            var n = tavolozza.Length / 3;
+            for (var i = 0; i < n; i++)
+            {
+                var dx = tavolozza[i * 3] - x;
+                var dy = tavolozza[i * 3 + 1] - y;
+                var dz = tavolozza[i * 3 + 2] - z;
+                var d = dx * dx + dy * dy + dz * dz;
+                if (d < minimo) { minimo = d; migliore = i; }
+            }
+            distanza = minimo;
+            return migliore;
         }
 
         private static byte Arrotonda(double v)

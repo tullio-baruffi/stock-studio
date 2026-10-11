@@ -199,6 +199,63 @@ namespace StockStudio.Shared.Vettoriale
         public bool ScalaDiGrigi { get; set; }
 
         /// <summary>
+        /// Misurare le distanze fra colori in Oklab invece che in RGB.
+        ///
+        /// ## Cosa cambia
+        /// Solo **come si misura**, non cosa si fa: il taglio mediano, Lloyd, il salvataggio dei
+        /// colori dimenticati e la fusione delle gemelle restano gli stessi passi nello stesso
+        /// ordine. Cambia lo spazio in cui si chiede "quanto distano questi due colori", e quindi
+        /// quali tinte la tavolozza sceglie e a quale tinta ogni pixel finisce.
+        ///
+        /// ## Esito della prova: SCARTATO come predefinito
+        /// L'ipotesi era che una misura percettiva scegliesse tinte migliori, visto che i due soli
+        /// progetti open source con la nostra architettura a confini condivisi -- Vecto e Trazor --
+        /// usano entrambi k-means in Oklab. Misurato sul banco a 2000 pixel di lato, con lo scarto
+        /// medio e il novantacinquesimo percentile fra il pixel di partenza e la tinta che gli
+        /// tocca (`Banco --errore`):
+        ///
+        ///     soggetto   misura   tinte   scarto medio   p95
+        ///     castoro    rgb      11      3,11           10,09
+        ///     castoro    oklab     9      3,43           12,51
+        ///     leone      rgb      19      3,20           10,65
+        ///     leone      oklab    12      3,54           13,99
+        ///     balena     rgb      19      3,21           10,96
+        ///     balena     oklab    13      3,53           13,93
+        ///     akita      rgb       2      1,74            3,63
+        ///     akita      oklab     2      1,74            3,63
+        ///
+        /// Oklab perde su ogni soggetto sfumato, **anche misurando l'errore in Oklab**, che e'
+        /// l'arbitro a lei favorevole. Su line art a tinte piatte (akita) le due misure arrivano
+        /// allo stesso risultato: li' non cambia niente perche' non c'e' niente da distinguere.
+        ///
+        /// Il sospetto era che Oklab perdesse solo perche' fondeva piu' tinte -- la soglia delle
+        /// gemelle e' tarata in RGB. Abbassandola apposta per riportare il conto delle tinte alla
+        /// pari (leone, soglia da 10,5 a 3) si arriva a 18 tinte contro 19, con scarto 3,41 contro
+        /// 3,20: perde comunque. Non e' quindi un problema di taratura di quella soglia.
+        ///
+        /// ## Cosa resta da provare, se un giorno si riprende
+        /// La prova ha cambiato **solo la misura**, non lo spazio in cui si lavora: il taglio
+        /// mediano divide ancora scatole con i lati paralleli agli assi RGB, e le soglie sono
+        /// rimaste quelle tarate in RGB. Puo' darsi che il difetto sia proprio la mescolanza --
+        /// una partenza in RGB raffinata in Oklab puo' assestarsi peggio di entrambe le cose fatte
+        /// per intero. Rifarlo per bene vuol dire istogramma, scatole e soglie tutti in Oklab, che
+        /// e' un lavoro molto piu' grande di questo e ora ha una misura contro.
+        ///
+        /// ## Perche' il flag resta nel codice
+        /// Perche' il risultato sopra si possa rifare invece di doverlo ricordare, e perche'
+        /// l'infrastruttura -- <see cref="MetricaColore"/>, la conversione, il banco -- e' gia'
+        /// scritta e provata. Spento, la produzione fa esattamente i conti di prima: lo garantisce
+        /// un test che confronta le due tavolozze tinta per tinta.
+        /// </summary>
+        public bool MetricaPercettiva { get; set; }
+
+        /// <summary>La misura delle distanze fra colori che questi parametri richiedono.</summary>
+        public MetricaColore Metrica
+        {
+            get { return MetricaColore.Scegli(MetricaPercettiva); }
+        }
+
+        /// <summary>
         /// La stessa immagine senza colore, pronta per la riduzione a tinte.
         ///
         /// Torna l'array **originale** quando la scala di grigi non e' chiesta: chi chiama lo fa su
@@ -283,6 +340,7 @@ namespace StockStudio.Shared.Vettoriale
             return new ParametriTracciato
             {
                 ScalaDiGrigi = ScalaDiGrigi,
+                MetricaPercettiva = MetricaPercettiva,
                 NumeroColori = Limita(NumeroColori, 2, 64),
                 SogliaUnione = SogliaUnione < 0 ? 0 : SogliaUnione > 20000 ? 20000 : SogliaUnione,
                 RiduzioneRumore = Limita(RiduzioneRumore, 0, 8),

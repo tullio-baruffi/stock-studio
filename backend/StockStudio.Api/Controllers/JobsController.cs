@@ -131,12 +131,16 @@ public class JobsController : ControllerBase
                 await using var stream = f.OpenReadStream();
                 var r = await _handoff.HandOffAsync(f.FileName, stream, modalita, threshold,
                                                     modulo?.Colori, modulo?.Unione, scelti, ct);
-                accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold });
+                // La posizione dice **quale** file e', non solo come si chiama: due immagini con lo
+                // stesso nome prese da cartelle diverse sono due consegne, e la pagina deve sapere
+                // quale delle due rimettere in elenco. Con il solo nome terrebbe anche quella
+                // arrivata, e il secondo tentativo la manderebbe in pipeline due volte.
+                accepted.Add(new { file = r.OriginalFileName, blob = r.BlobName, threshold, posizione = i });
             }
             catch (Exception ex)
             {
                 // One bad file must not sink the whole batch: the rest is already on its way.
-                rejected.Add(new { file = f.FileName, error = ex.Message });
+                rejected.Add(new { file = f.FileName, error = ex.Message, posizione = i });
             }
         }
 

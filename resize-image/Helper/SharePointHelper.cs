@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Extensions.Logging;
 using MJ.Classifier.Models;
@@ -177,14 +178,23 @@ namespace MJ.Classifier.Helpers
         /// </summary>
         /// <summary>
         /// Se accanto a questo file, nella stessa cartella e con lo stesso nome, c'e' un
-        /// vettoriale.
+        /// vettoriale -- o se c'era e nel frattempo e' gia' partito.
         ///
         /// Serve a distinguere il JPEG di un gruppo vettoriale -- dove e' l'anteprima di una
         /// consegna che si vende come curve -- dalla fotografia, che il JPEG lo e' e basta. Le due
         /// cose vanno a destinazioni diverse, e dal solo nome del file non si distinguono.
         ///
-        /// Si chiedono i due nomi precisi invece di elencare la cartella: nella radice di una
+        /// Si chiedono i nomi precisi invece di elencare la cartella: nella radice di una
         /// libreria da migliaia di righe un elenco costerebbe quanto tutto il resto dell'invio.
+        ///
+        /// ## Il vettoriale gia' partito
+        /// I tre file di un gruppo partono come tre messaggi indipendenti, e move-sent-files
+        /// sposta ciascuno nella radice dei pubblicati appena e' stato inviato. Se SVG ed EPS
+        /// arrivano prima del JPEG, quando tocca al JPEG accanto non c'e' piu' niente: veniva
+        /// preso per una fotografia e mandato a tutte le destinazioni, Adobe Stock compreso, dove
+        /// l'SVG era gia' arrivato. Misurato l'11/10/2026 sugli ultimi sessanta giorni: dei 43
+        /// JPEG partiti "senza tracciato accanto", 37 erano anteprime di vettoriali gia' inviati
+        /// (Volpe2 fra questi). Per questo, se accanto non c'e', si guarda anche fra i pubblicati.
         /// </summary>
         public static bool EsisteUnVettorialeAccanto(SharePointSettings sharePointSettings,
                                                      string serverRelativeUrl,
@@ -193,6 +203,15 @@ namespace MJ.Classifier.Helpers
             var punto = serverRelativeUrl.LastIndexOf('.');
             if (punto < 0) return false;
             var senzaEstensione = serverRelativeUrl.Substring(0, punto);
+
+            var dove = new List<(string Radice, string Dove)> { (senzaEstensione, "accanto") };
+            var inviati = sharePointSettings.InviatiFolder?.TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(inviati))
+            {
+                var neiPubblicati = $"{inviati}/{Path.GetFileNameWithoutExtension(serverRelativeUrl)}";
+                if (!string.Equals(neiPubblicati, senzaEstensione, StringComparison.OrdinalIgnoreCase))
+                    dove.Add((neiPubblicati, "fra i pubblicati, gia' inviato"));
+            }
 
             try
             {
@@ -204,15 +223,18 @@ namespace MJ.Classifier.Helpers
                 clientContext.Load(web);
                 clientContext.ExecuteQuery();
 
-                foreach (var estensione in new[] { ".svg", ".eps", ".ai" })
+                foreach (var (radice, descrizione) in dove)
                 {
-                    var url = senzaEstensione + estensione;
-                    if (!url.StartsWith(web.ServerRelativeUrl)) url = $"{web.ServerRelativeUrl}{url}";
-
-                    if (EsisteIlFile(clientContext, web, url, log))
+                    foreach (var estensione in new[] { ".svg", ".eps", ".ai" })
                     {
-                        log.LogInformation($"{Path.GetFileName(serverRelativeUrl)}: gruppo vettoriale (trovato {estensione})");
-                        return true;
+                        var url = radice + estensione;
+                        if (!url.StartsWith(web.ServerRelativeUrl)) url = $"{web.ServerRelativeUrl}{url}";
+
+                        if (EsisteIlFile(clientContext, web, url, log))
+                        {
+                            log.LogInformation($"{Path.GetFileName(serverRelativeUrl)}: gruppo vettoriale (trovato {estensione} {descrizione})");
+                            return true;
+                        }
                     }
                 }
             }
